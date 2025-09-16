@@ -1,0 +1,34 @@
+https://redialdata.github.io/website/datasheet
+
+Dataset Composition
+Structure
+The dataset is published in the “jsonl” format, i.e., as a text file where each line corresponds to a Dialogue given as a valid JSON document.
+
+---
+
+A Dialogue contains these fields:
+
+conversationId:         an integer
+initiatorWorkerId:      an integer identifying to the worker initiating the conversation (the recommendation seeker)
+respondentWorkerId:     an integer identifying the worker responding to the initiator (the recommender)
+messages:               a list of Message objects
+movieMentions:          a dict mapping movie IDs mentioned in this dialogue to movie names
+initiatorQuestions:     a dictionary mapping movie IDs to the labels supplied by the initiator. Each label is a bool corresponding to whether the initiator has said he saw the movie, liked it, or suggested it.
+respondentQuestions:    a dictionary mapping movie IDs to the labels supplied by the respondent. Each label is a bool corresponding to whether the initiator has said he saw the movie, liked it, or suggested it.
+
+---
+
+Each Message contains these fields:
+
+messageId:          a unique ID for this message
+text:               a string with the actual message. The string may contain a token starting with @ followed by an integer. This is a movie ID which can be looked up in the movieMentions field of the Dialogue object.
+timeOffset:         time since start of dialogue in seconds
+senderWorkerId:     the ID of the worker sending the message, either initiatorWorkerId or respondentWorkerId.
+
+---
+
+The labels in initiatorQuestions and respondentQuestions have the following meaning:
+
+suggested:  0 if it was mentioned by the seeker, 1 if it was a suggestion from the recommender
+seen:       0 if the seeker has not seen the movie, 1 if they have seen it, 2 if they did not say
+liked:      0 if the seeker did not like the movie, 1 if they liked it, 2 if they did not say
