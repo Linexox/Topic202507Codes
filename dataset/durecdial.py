@@ -4,13 +4,14 @@ import torch
 import random
 import pandas as pd
 from tqdm import tqdm
+from base import BaseDataset
 
 # class ABC_Dataset:
 #     def __init__(self, dataset_path):
 #         self.dataset_path = dataset_path
 
 
-class DuRecDial_Dataset:
+class DuRecDial_Dataset(BaseDataset):
     """
     Dataset info:
     - train/dev/test
@@ -21,10 +22,10 @@ class DuRecDial_Dataset:
         - knowledge: list of list, [[h,r,t], ...]
     """
 
-    def __init__(self, dataset_path):
+    def __init__(self, config=None, dataset_path=None):
+        super().__init__(config, dataset_path)
         self.modality = ["txt", "img", "vdo", "ado"]
-        self.modality_folder = ["txt_emb", "img_emb", "vdo_emb", "ado_emb"]
-        self.dataset_path = dataset_path
+        self.modality_folder = ["txt_emb", "img_emb", "vdo_emb", "audio_emb"]
         self.train_data, self.dev_data, self.test_data = self.load_data()
         self.movie_id2name, self.movie_name2id = self._get_movie_map()
         self.user_id2name, self.user_name2id = self._get_user_map()
@@ -124,8 +125,8 @@ class DuRecDial_Dataset:
 
 
 if __name__ == "__main__":
-    path = "datasets\\DuRecDial"
-    dataset = DuRecDial_Dataset(path)
+    path = "data\\DuRecDial"
+    dataset = DuRecDial_Dataset(config=None, dataset_path=path)
     print(len(dataset.train_data))
     print(len(dataset.dev_data))
     print(len(dataset.test_data))
