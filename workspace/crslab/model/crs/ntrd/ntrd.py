@@ -95,12 +95,15 @@ class NTRDModel(BaseModel):
         super(NTRDModel, self).__init__(opt, device, dpath, resource)
     
     def build_model(self):
-        self._init_embeddings()
-        self._build_kg_layer()
-        self._build_infomax_layer()
-        self._build_recommendation_layer()
-        self._build_conversation_layer()
-        self._build_movie_selector()
+        """
+        在父类的__init__函数中被调用，用于构建模型
+        """
+        self._init_embeddings() # 初始化嵌入层
+        self._build_kg_layer() # 构建知识图谱编码层
+        self._build_infomax_layer() # 构建信息最大化层
+        self._build_recommendation_layer() # 构建推荐层
+        self._build_conversation_layer() # 构建对话层
+        self._build_movie_selector() # 构建电影选择器层
     
     def _init_embeddings(self):
         if self.pretrained_embedding is not None:

@@ -1,0 +1,155 @@
+# HypergraphLlava CRS Model Configuration
+# This config supports training for conversational recommendation with hypergraph understanding
+
+gpu: [0]  # GPU IDs to use
+seed: 42
+
+# ==================== Data ====================
+dataset: "TGReDial"  # or "ReDial", "OpenDialKG", etc.
+split:
+  train: 0.8
+  valid: 0.1
+  test: 0.1
+
+# ==================== Model ====================
+model_name: "HypergraphLlavaCRS"
+
+# LLaVA backbone
+llava_model_path: "llava-hf/llava-1.5-7b-hf"  # Pretrained LLaVA model
+pretrained_model_path: null  # Path to pretrained HypergraphLlava (optional)
+
+# Model dimensions
+hidden_size: 4096  # LLaMA hidden size
+hg_hidden_size: 768  # Hypergraph feature dimension
+
+# Hypergraph configurations
+use_hypergraph: true
+graph_tower: "HGNN"  # Hypergraph neural network type
+hg_num_layers: 2
+hg_dropout: 0.1
+
+# Task configurations
+enable_recommendation: true
+enable_conversation: true
+
+# ==================== Training Strategy ====================
+# Two-stage training
+train_recommendation: true
+train_conversation: true
+freeze_llava_for_rec: true  # Freeze LLaVA backbone when training recommendation
+
+# ==================== Recommendation Task ====================
+rec:
+  epoch: 10
+  batch_size: 128
+  lr: 0.001
+  optimizer: "Adam"
+  weight_decay: 0.0001
+  lr_scheduler:
+    name: "StepLR"
+    step_size: 5
+    gamma: 0.5
+  
+  rec_dropout: 0.1
+
+# ==================== Conversation Task ====================
+conv:
+  epoch: 10
+  batch_size: 16  # Smaller batch size for conversation
+  lr: 0.00001  # Lower learning rate for fine-tuning
+  optimizer: "AdamW"
+  weight_decay: 0.01
+  lr_scheduler:
+    name: "CosineAnnealingLR"
+    T_max: 10
+  
+  max_gen_len: 50  # Maximum generation length
+  context_truncate: 256  # Maximum context length
+  response_truncate: 50  # Maximum response length
+
+# ==================== Special Tokens ====================
+# Hypergraph tokens (will be added to tokenizer)
+hypergraph_tokens:
+  use_hg_start_end: true
+  hg_patch_token: "<hg_patch>"
+  hg_start_token: "<hg_start>"
+  hg_end_token: "<hg_end>"
+
+# ==================== Training ====================
+gradient_accumulation_steps: 4
+max_grad_norm: 1.0
+early_stop:
+  patience: 5
+  metric: "loss"  # Metric to monitor
+
+# Mixed precision training
+fp16: true
+bf16: false
+
+# Logging
+log_interval: 10
+eval_interval: 500
+save_interval: 1000
+
+# Checkpoint
+save_dir: "./save/hypergraph_llava"
+load_checkpoint: null  # Path to resume training
+
+# ==================== Generation ====================
+generation:
+  do_sample: false  # Use greedy decoding
+  num_beams: 1
+  temperature: 1.0
+  top_k: 50
+  top_p: 0.9
+  repetition_penalty: 1.0
+
+# ==================== Evaluation ====================
+metrics:
+  recommendation:
+    - "hit@1"
+    - "hit@10"
+    - "hit@50"
+    - "mrr@1"
+    - "mrr@10"
+    - "mrr@50"
+    - "ndcg@1"
+    - "ndcg@10"
+    - "ndcg@50"
+  
+  conversation:
+    - "ppl"
+    - "bleu-1"
+    - "bleu-2"
+    - "bleu-3"
+    - "bleu-4"
+    - "dist-1"
+    - "dist-2"
+    - "dist-3"
+    - "dist-4"
+
+# ==================== Hypergraph Data ====================
+# Modalities to use
+hypergraph_modalities:
+  - "image"   # Image hypergraph
+  - "video"   # Video hypergraph
+  - "audio"   # Audio hypergraph
+
+# Hypergraph construction
+hypergraph_construction:
+  method: "knn"  # or "threshold", "adaptive"
+  k_neighbors: 10
+  threshold: 0.5
+
+# Hypergraph feature paths
+hypergraph_features:
+  image: "data/{dataset}/img_emb/"
+  video: "data/{dataset}/vdo_emb/"
+  audio: "data/{dataset}/audio_emb/"
+
+# ==================== Ablation Study ====================
+ablation:
+  no_hypergraph: false  # Disable hypergraph (baseline)
+  no_vision: false  # Disable vision tower
+  no_rec_head: false  # Use only conversation
+  no_conv_head: false  # Use only recommendation
