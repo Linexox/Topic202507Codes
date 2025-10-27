@@ -12,6 +12,9 @@ from tqdm import tqdm
 from crslab.config import DATASET_PATH
 from crslab.data.dataset.base import BaseDataset
 
+def _unique_list(input_list: list):
+    return list(set(input_list))
+
 class ReDialDataset(BaseDataset):
     def __init__(
         self,
@@ -113,15 +116,48 @@ class ReDialDataset(BaseDataset):
 
     def _raw_data_process(self, raw_data):
         augmented_data = [
-
+            self._merge_conv_data(diag, user_id=diag['workerId'], conv_id=diag['conversationId'])
+            for diag in raw_data
         ]
+    
+    def _get_movie_mentioned(self, text: str=None, text_token_ids: list=None):
+        if text is not None:
+            movie_mentioned_list = set()
+            for movie_name, movie_id in self.movie2ind.items():
+                if movie_name in text:
+                    movie_mentioned_list.add(movie_id)
+            
+            movie_mentioned_list = list(movie_mentioned_list)
+            return movie_mentioned_list
+        elif text_token_ids is not None:
+            raised NotImplementedError("Movie mention extraction from token IDs is not implemented.")
+        else:
+            raise ValueError("Either text or text_token_ids must be provided to extract movie mentions.")
+
 
     def _merge_conv_data(self, diag, user_id, conv_id):
         augmented_data = []
         last_role = None
         for uttr in diag['messages']:
             text_token_ids = [self.token2id.get(word, self.token2id['<unk>']) for word in self.tokenizer.encode(uttr["text"])]
-            movie_ids = 
-            role = uttr['role']
+            movie_ids = _get_movie_mentioned(text=uttr["text"])
+            role = uttr['senderWorkerId']
             if role == last_role:
+                augmented_data[-1]['text'] += text_token_ids
+                augmented_data[-1]["movie"] += movie_ids
+            else:
+                augmented_data.append({
+                    'user_id': user_id,
+                    'conv_id': conv_id,
+                    'role': role,
+                    'text_token_ids': text_token_ids,
+                    'movie_mentioned': movie_ids
+                })
+            last_role = role
+        
+        return augmented_data
+
+                # augmented_data[-1]['text_token_ids'].extend(text_token_ids)
+                # augmented_data[-1]['movie_mentioned'].extend(movie_ids)
+                # augmented_data[-1]['movie_mentioned'] = list(set(augmented_data[-1]['movie_mentioned']))
                 
