@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 from crslab.config import DATASET_PATH
 from crslab.data.dataset.base import BaseDataset
+from .resources import resources
 
 
 def _unique_list(input_list: list):
@@ -27,27 +28,28 @@ class ReDialDataset(BaseDataset):
         save: bool = True,
         tokenizer: Optional[AutoTokenizer] = None,
     ):
+        resources = resources[tokenize]
         self.opt = opt
         self.dpath = os.path.join(DATASET_PATH, "redial", "hypergraph_llava")
+        super().__init__(opt, tokenize, restore, save)
+        # if tokenizer is not None:
+        #     logger.info("[dataset.redial] Using provided tokenizer with special tokens.")
+        #     self.tokenizer = tokenizer
+        #     self._verify_tokenizer_special_tokens()
+        # else:
+        #     raise NotImplementedError("Tokenizer must be provided for ReDialDataset.")
 
-        if tokenizer is not None:
-            logger.info("[dataset.redial] Using provided tokenizer with special tokens.")
-            self.tokenizer = tokenizer
-            self._verify_tokenizer_special_tokens()
-        else:
-            raise NotImplementedError("Tokenizer must be provided for ReDialDataset.")
-
-        if restore:
-            raise NotImplementedError("Restore functionality is not implemented yet.")
-        else:
-            logger.info(f"[dataset.redial] Preparing dataset from {self.dpath}...")
-            train_data, valid_data, test_data = self._load_raw_data()
-            logger.info("[dataset.redial] Finish data load")
-            self._load_vacab()
-            self._load_other_data()
-            self.train_data, self.valid_data, self.test_data = self._data_preprocess(
-                train_data, valid_data, test_data
-            )
+        # if restore:
+        #     raise NotImplementedError("Restore functionality is not implemented yet.")
+        # else:
+        #     logger.info(f"[dataset.redial] Preparing dataset from {self.dpath}...")
+        #     train_data, valid_data, test_data = self._load_raw_data()
+        #     logger.info("[dataset.redial] Finish data load")
+        #     self._load_vacab()
+        #     self._load_other_data()
+        #     self.train_data, self.valid_data, self.test_data = self._data_preprocess(
+        #         train_data, valid_data, test_data
+        #     )
 
     def _verify_tokenizer_special_tokens(self):
         DEFAULT_HYPERGRAPH_TOKEN = "<hgraph>"
@@ -70,7 +72,20 @@ class ReDialDataset(BaseDataset):
         self.hg_patch_id = self.tokenizer.convert_tokens_to_ids(DEFAULT_HYPERGRAPH_PATCH_TOKEN)
 
     def _load_data(self):
-        raise NotImplementedError("Use _load_raw_data instead for ReDialDataset.")
+        # raise NotImplementedError("Use _load_raw_data instead for ReDialDataset.")
+        train_data, valid_data, test_data = self._load_raw_data()
+        self._load_vacab()
+        self._load_other_data()
+
+        vocab = {
+            'ind2tok': self.ind2tok,
+            'tok2ind': self.tok2ind,
+            'ind2movie': self.ind2movie,
+            'movie2ind': self.movie2ind,
+            'vocab_size': len(self.tok2ind),
+            'n_movie': len(self.movie2ind),
+        }
+        return train_data, valid_data, test_data, vocab
 
     def _load_raw_data(self):
         if not os.path.exists(self.dpath):
@@ -114,8 +129,8 @@ class ReDialDataset(BaseDataset):
         logger.info("[dataset.redial] Processed validation data.")
         processed_test_data = self._raw_data_process(test_data)
         logger.info("[dataset.redial] Processed test data.")
-        # processed_side_data = self.side_data
-        return processed_train_data, processed_valid_data, processed_test_data
+        processed_side_data = None
+        return processed_train_data, processed_valid_data, processed_test_data, processed_side_data
 
     def _raw_data_process(self, raw_data):
         augmented_data = [
