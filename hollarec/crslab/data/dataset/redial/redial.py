@@ -16,6 +16,20 @@ from .resources import resources
 
 
 class ReDialDataset(BaseDataset):
+    """
+    ~_data structure:
+    [
+        {
+            "role": "Seeker" or "Recommender",
+            "context_tokens": [[his1], [his2], ...],
+            "context_movies": [...],
+            "movies": [...],
+            "response": [cur],
+        },
+        ...
+    ]
+    """
+
     def __init__(
         self,
         opt,
@@ -38,15 +52,16 @@ class ReDialDataset(BaseDataset):
             self.tokenizer = tokenizer
             logger.info("[dataset.redial] Using provided tokenizer with special tokens.")
         else:
-            logger.info(f"[dataset.redial] Loading tokenizer from {os.path.join(self.dpath, 'tokenizer')}.")
+            logger.info(
+                f"[dataset.redial] Loading tokenizer from {os.path.join(self.dpath, 'tokenizer')}."
+            )
             self.tokenizer = AutoTokenizer.from_pretrained(
                 os.path.join(self.dpath, "tokenizer"),
             )
             # print(self.tokenizer)
         self._verify_tokenizer_special_tokens()
-    
-        super().__init__(opt, dpath=self.dpath, resource=resource, restore=restore, save=save)
 
+        super().__init__(opt, dpath=self.dpath, resource=resource, restore=restore, save=save)
 
     def _verify_tokenizer_special_tokens(self):
         DEFAULT_HYPERGRAPH_TOKEN = "<hgraph>"
@@ -77,12 +92,12 @@ class ReDialDataset(BaseDataset):
         self._load_other_data()
 
         vocab = {
-            'ind2tok': self.ind2tok,
-            'tok2ind': self.token2ind,  # 使用 token2ind
-            'ind2movie': self.ind2movie,
-            'movie2ind': self.movie2ind,
-            'vocab_size': len(self.token2ind),  # 使用 token2ind
-            'n_movie': len(self.movie2ind),
+            "ind2tok": self.ind2tok,
+            "tok2ind": self.token2ind,  # 使用 token2ind
+            "ind2movie": self.ind2movie,
+            "movie2ind": self.movie2ind,
+            "vocab_size": len(self.token2ind),  # 使用 token2ind
+            "n_movie": len(self.movie2ind),
         }
         return train_data, valid_data, test_data, vocab
 
@@ -109,7 +124,7 @@ class ReDialDataset(BaseDataset):
             raise ValueError("Tokenizer must be set before loading vocabulary.")
         # self.tok2ind = {token: idx for token, idx in self.tokenizer.get_vocab().items()}
         # self.ind2tok = {idx: token for token, idx in self.tokenizer.get_vocab().items()}
-        with open(os.path.join(self.dpath, 'token2ind.json'), 'r', encoding='utf-8') as f:
+        with open(os.path.join(self.dpath, "token2ind.json"), "r", encoding="utf-8") as f:
             self.token2ind = json.load(f)
             self.ind2tok = {idx: token for token, idx in self.token2ind.items()}
             logger.info("[dataset.redial] Vocabulary loaded from tokenizer.")
@@ -121,9 +136,11 @@ class ReDialDataset(BaseDataset):
             raise FileNotFoundError(f"Dataset path {self.dpath} does not exist.")
         with open(os.path.join(self.dpath, "movie2ind.json"), "r", encoding="utf-8") as f:
             self.movie2ind = json.load(f)
-            self.ind2movie = {int(movie_id): movie_name for movie_name, movie_id in self.movie2ind.items()}
+            self.ind2movie = {
+                int(movie_id): movie_name for movie_name, movie_id in self.movie2ind.items()
+            }
             logger.info(f"[dataset.redial] Loaded movie vocabulary: {len(self.movie2ind)} movies.")
-        
+
         # with open(os.path.join(self.dpath, "movie_mentioned.csv"), "rb") as f:
         #     movies = pd.read_csv(f)
         #     logger.info(f"[dataset.redial] Loaded {len(movies)} movie samples.")
@@ -147,7 +164,7 @@ class ReDialDataset(BaseDataset):
             for diag in raw_data
         ]
         augmented_conv_dicts = []
-        for diag in tqdm(augmented_data, desc='Processing conversations'):
+        for diag in tqdm(augmented_data, desc="Processing conversations"):
             augmented_conv_list = self._augment_and_add(diag)
             augmented_conv_dicts.extend(augmented_conv_list)
 
@@ -174,23 +191,21 @@ class ReDialDataset(BaseDataset):
         last_role = None
         for uttr in conv["dialog"]:
             text_token_ids = [
-                self.token2ind.get(token, self.token2ind["<unk>"])
-                for token in uttr['text']
+                self.token2ind.get(token, self.token2ind["<unk>"]) for token in uttr["text"]
             ]
             # movie_ids = self._get_movie_mentioned(text=uttr["text"])
             role = uttr["role"]
             if role == last_role:
                 augmented_data[-1]["text"] += text_token_ids
-                augmented_data[-1]["movies"] += uttr['movies']
+                augmented_data[-1]["movies"] += uttr["movies"]
             else:
                 augmented_data.append(
                     {
                         "user_id": user_id,
                         "conv_id": conv_id,
                         "role": role,
-                        # 'text': uttr['text'],
                         "text": text_token_ids,
-                        "movies": uttr['movies'],
+                        "movies": uttr["movies"],
                     }
                 )
             last_role = role
@@ -207,6 +222,7 @@ class ReDialDataset(BaseDataset):
         """
         augmented_conv_dicts = []
         context_tokens, context_movies = [], []
+        # conv_id = raw_conv_dict[0]["conv_id"]
         for i, turn in enumerate(raw_conv_dict):
             # role = turn['role']
             turn_tokens = turn["text"]
@@ -215,10 +231,10 @@ class ReDialDataset(BaseDataset):
             if len(context_tokens) > 0:
                 conv_dict = {
                     "role": turn["role"],
-                    "context_tokens": copy(context_tokens),
-                    "context_movies": copy(context_movies),
                     "movies": turn_movies,
                     "response": turn_tokens,
+                    "context_tokens": copy(context_tokens),
+                    "context_movies": copy(context_movies),
                 }
                 augmented_conv_dicts.append(conv_dict)
             context_tokens.append(turn_tokens)
