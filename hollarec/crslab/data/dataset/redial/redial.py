@@ -3,7 +3,7 @@ import json
 import pickle
 import pandas as pd
 from copy import copy
-from typing import Dict, List, Optional  # Added Optional
+from typing import Dict, List, Optional
 
 import torch
 from transformers import AutoTokenizer
@@ -15,10 +15,6 @@ from crslab.data.dataset.base import BaseDataset
 from .resources import resources
 
 
-def _unique_list(input_list: list):
-    return list(set(input_list))
-
-
 class ReDialDataset(BaseDataset):
     def __init__(
         self,
@@ -28,32 +24,28 @@ class ReDialDataset(BaseDataset):
         save: bool = True,
         tokenizer: Optional[AutoTokenizer] = None,
     ):
-        resources = resources[tokenize]
-        self.opt = opt
-        self.dpath = os.path.join(DATASET_PATH, "redial", "hypergraph_llava")
-        super().__init__(opt, tokenize, restore, save)
-        # if tokenizer is not None:
-        #     logger.info("[dataset.redial] Using provided tokenizer with special tokens.")
-        #     self.tokenizer = tokenizer
-        #     self._verify_tokenizer_special_tokens()
-        # else:
-        #     raise NotImplementedError("Tokenizer must be provided for ReDialDataset.")
+        resource = resources.get(tokenize, None)
+        if resource is None:
+            logger.info(f"[dataset.redial] Resource for tokenizer '{tokenize}' not found.")
+        else:
+            logger.info(f"[dataset.redial] Using resource for tokenizer '{tokenize}'.")
 
-        # if restore:
-        #     raise NotImplementedError("Restore functionality is not implemented yet.")
-        # else:
-        #     logger.info(f"[dataset.redial] Preparing dataset from {self.dpath}...")
-        #     train_data, valid_data, test_data = self._load_raw_data()
-        #     logger.info("[dataset.redial] Finish data load")
-        #     self._load_vacab()
-        #     self._load_other_data()
-        #     self.train_data, self.valid_data, self.test_data = self._data_preprocess(
-        #         train_data, valid_data, test_data
-        #     )
+        self.opt = opt
+        self.dpath = os.path.join(DATASET_PATH, "redial", tokenizer)
+        super().__init__(opt, tokenize, restore, save)
+        if tokenizer is not None:
+            self.tokenizer = tokenizer
+            logger.info("[dataset.redial] Using provided tokenizer with special tokens.")
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                os.path.join(self.dpath, "tokenizer")
+            )
+        self._verify_tokenizer_special_tokens()
+            
 
     def _verify_tokenizer_special_tokens(self):
         DEFAULT_HYPERGRAPH_TOKEN = "<hgraph>"
-        DEFAULT_HYPERGRAPH_PATCH_TOKEN = "<hg_patch>"  # Fixed typo: was "<hg_path>"
+        DEFAULT_HYPERGRAPH_PATCH_TOKEN = "<hg_patch>"
         DEFAULT_HG_START_TOKEN = "<hg_start>"
         DEFAULT_HG_END_TOKEN = "<hg_end>"
         required_tokens = [
@@ -106,21 +98,28 @@ class ReDialDataset(BaseDataset):
     def _load_vacab(self):
         if not hasattr(self, "tokenizer") or self.tokenizer is None:
             raise ValueError("Tokenizer must be set before loading vocabulary.")
-        self.tok2ind = {token: idx for token, idx in self.tokenizer.get_vocab().items()}
-        self.ind2tok = {idx: token for token, idx in self.tokenizer.get_vocab().items()}
-        logger.info("[dataset.redial] Vocabulary loaded from tokenizer.")
-        logger.info(f"[dataset.redial] Vocabulary size: {len(self.tok2ind)} tokens.")
+        # self.tok2ind = {token: idx for token, idx in self.tokenizer.get_vocab().items()}
+        # self.ind2tok = {idx: token for token, idx in self.tokenizer.get_vocab().items()}
+        with open(os.path.join(self.dpath, 'token2ind.json'), 'rb') as f:
+            self.token2ind = json.load(f)
+            self.ind2tok = {idx: token for token, idx in self.token2ind.items()}
+            logger.info("[dataset.redial] Vocabulary loaded from tokenizer.")
+            logger.info(f"[dataset.redial] Vocabulary size: {len(self.token2ind)} tokens.")
 
     def _load_other_data(self):
         if not os.path.exists(self.dpath):
             raise FileNotFoundError(f"Dataset path {self.dpath} does not exist.")
-
-        with open(os.path.join(self.dpath, "movie_mentioned.csv"), "rb") as f:
-            movies = pd.read_csv(f)
-            logger.info(f"[dataset.redial] Loaded {len(movies)} movie samples.")
-            self.movie2ind = {row["movieName"]: row["movieId"] for _, row in movies.iterrows()}
-            self.ind2movie = {row["movieId"]: row["movieName"] for _, row in movies.iterrows()}
+        with open(os.path.join(self.dpath, "movie2ind.json"), "rb") as f:
+            self.movie2ind = json.load(f)
+            self.ind2movie = {int(movie_id): movie_name for movie_name, movie_id in self.movie2ind.items()}
             logger.info(f"[dataset.redial] Loaded movie vocabulary: {len(self.movie2ind)} movies.")
+        
+        # with open(os.path.join(self.dpath, "movie_mentioned.csv"), "rb") as f:
+        #     movies = pd.read_csv(f)
+        #     logger.info(f"[dataset.redial] Loaded {len(movies)} movie samples.")
+        #     self.movie2ind = {row["movieName"]: row["movieId"] for _, row in movies.iterrows()}
+        #     self.ind2movie = {row["movieId"]: row["movieName"] for _, row in movies.iterrows()}
+        #     logger.info(f"[dataset.redial] Loaded movie vocabulary: {len(self.movie2ind)} movies.")
 
     def _data_preprocess(self, train_data, valid_data, test_data):
         processed_train_data = self._raw_data_process(train_data)
@@ -134,7 +133,7 @@ class ReDialDataset(BaseDataset):
 
     def _raw_data_process(self, raw_data):
         augmented_data = [
-            self._merge_conv_data(diag, user_id=diag["workerId"], conv_id=diag["conversationId"])
+            self._merge_conv_data(diag, user_id=diag["user_id"], conv_id=diag["conv_id"])
             for diag in raw_data
         ]
         augmented_conv_dicts = []
@@ -160,10 +159,10 @@ class ReDialDataset(BaseDataset):
                 "Either text or text_token_ids must be provided to extract movie mentions."
             )
 
-    def _merge_conv_data(self, diag, user_id, conv_id):
+    def _merge_conv_data(self, conv, user_id, conv_id):
         augmented_data = []
         last_role = None
-        for uttr in diag["messages"]:
+        for uttr in conv["dialog"]:
             text_token_ids = [
                 self.token2id.get(word, self.token2id["<unk>"])
                 for word in self.tokenizer.encode(uttr["text"])

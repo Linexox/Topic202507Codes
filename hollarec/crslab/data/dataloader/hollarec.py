@@ -29,7 +29,7 @@ class HollaRecDataLoader(BaseDataLoader):
         self.hg_end_token_idx = vocab['tok2ind']['<hg_end>']
 
         def rec_process_fn(self):
-            raise NotImplementedError("Data processing function is not implemented yet.")
+            # raise NotImplementedError("Data processing function is not implemented yet.")
             augment_dataset = []
             for data in tqdm(self.dataset, desc='[Dataloader process]'):
                 augment_data = copy(data)

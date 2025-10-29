@@ -1,0 +1,12 @@
+#data
+#dataset
+dataset: ReDial
+tokenize: llava
+# dataloader
+related_truncate: 1024
+context_truncate: 256
+response_truncate: 30
+scale: 1
+# model
+
+# optim

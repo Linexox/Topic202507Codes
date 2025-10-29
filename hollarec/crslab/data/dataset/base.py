@@ -39,9 +39,10 @@ class BaseDataset(ABC):
         self.opt = opt
         self.dpath = dpath
 
+        
         # download
-        dfile = resource['file']
-        build(dpath, dfile, version=resource['version'])
+        # dfile = resource['file']
+        # build(dpath, dfile, version=resource['version'])
 
         if not restore:
             # load and process
