@@ -11,7 +11,7 @@ import os
 import time
 from collections import defaultdict
 
-import fasttext
+# import fasttext
 from loguru import logger
 from nltk import ngrams
 from torch.utils.tensorboard import SummaryWriter
@@ -52,14 +52,14 @@ class StandardEvaluator(BaseEvaluator):
             self.writer = SummaryWriter(log_dir='runs/' + time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime()))
             self.reports_name = ['Recommendation Metrics', 'Generation Metrics', 'Optimization Metrics']
 
-    def _load_embedding(self, language):
-        resource = resources[language]
-        dpath = os.path.join(EMBEDDING_PATH, language)
-        build(dpath, resource['file'], resource['version'])
+    # def _load_embedding(self, language):
+    #     resource = resources[language]
+    #     dpath = os.path.join(EMBEDDING_PATH, language)
+    #     build(dpath, resource['file'], resource['version'])
 
-        model_file = os.path.join(dpath, f'cc.{language}.300.bin')
-        self.ft = fasttext.load_model(model_file)
-        logger.info(f'[Load {model_file} for embedding metric')
+    #     model_file = os.path.join(dpath, f'cc.{language}.300.bin')
+    #     self.ft = fasttext.load_model(model_file)
+    #     logger.info(f'[Load {model_file} for embedding metric')
 
     def _get_sent_embedding(self, sent):
         return [self.ft[token] for token in sent.split()]

@@ -18,11 +18,23 @@ import numpy as np
 import random
 import nltk
 import torch
-from fuzzywuzzy.process import extractOne
+# from fuzzywuzzy.process import extractOne
 from loguru import logger
 from nltk import word_tokenize
 from torch import optim
-from transformers import AdamW, Adafactor
+
+# Handle AdamW import - newer transformers versions moved it to torch.optim
+try:
+    from transformers import AdamW
+except ImportError:
+    from torch.optim import AdamW
+
+# Adafactor is still in transformers
+try:
+    from transformers import Adafactor
+except ImportError:
+    logger.warning("Adafactor not available from transformers")
+    Adafactor = None
 
 from crslab.config import SAVE_PATH
 from crslab.evaluator import get_evaluator
@@ -33,7 +45,9 @@ from crslab.system.utils.functions import compute_grad_norm
 
 optim_class = {}
 optim_class.update({k: v for k, v in optim.__dict__.items() if not k.startswith('__') and k[0].isupper()})
-optim_class.update({'AdamW': AdamW, 'Adafactor': Adafactor})
+optim_class.update({'AdamW': AdamW})
+if Adafactor is not None:
+    optim_class.update({'Adafactor': Adafactor})
 lr_scheduler_class = {k: v for k, v in lr_scheduler.__dict__.items() if not k.startswith('__') and k[0].isupper()}
 transformers_tokenizer = ('bert', 'gpt2')
 
@@ -293,86 +307,86 @@ class BaseSystem(ABC):
     def interact(self):
         pass
 
-    def init_interact(self):
-        self.finished = False
-        self.context = {
-            'rec': {},
-            'conv': {}
-        }
-        for key in self.context:
-            self.context[key]['context_tokens'] = []
-            self.context[key]['context_entities'] = []
-            self.context[key]['context_words'] = []
-            self.context[key]['context_items'] = []
-            self.context[key]['user_profile'] = []
-            self.context[key]['interaction_history'] = []
-            self.context[key]['entity_set'] = set()
-            self.context[key]['word_set'] = set()
+    # def init_interact(self):
+    #     self.finished = False
+    #     self.context = {
+    #         'rec': {},
+    #         'conv': {}
+    #     }
+    #     for key in self.context:
+    #         self.context[key]['context_tokens'] = []
+    #         self.context[key]['context_entities'] = []
+    #         self.context[key]['context_words'] = []
+    #         self.context[key]['context_items'] = []
+    #         self.context[key]['user_profile'] = []
+    #         self.context[key]['interaction_history'] = []
+    #         self.context[key]['entity_set'] = set()
+    #         self.context[key]['word_set'] = set()
 
-    def update_context(self, stage, token_ids=None, entity_ids=None, item_ids=None, word_ids=None):
-        if token_ids is not None:
-            self.context[stage]['context_tokens'].append(token_ids)
-        if item_ids is not None:
-            self.context[stage]['context_items'] += item_ids
-        if entity_ids is not None:
-            for entity_id in entity_ids:
-                if entity_id not in self.context[stage]['entity_set']:
-                    self.context[stage]['entity_set'].add(entity_id)
-                    self.context[stage]['context_entities'].append(entity_id)
-        if word_ids is not None:
-            for word_id in word_ids:
-                if word_id not in self.context[stage]['word_set']:
-                    self.context[stage]['word_set'].add(word_id)
-                    self.context[stage]['context_words'].append(word_id)
+    # def update_context(self, stage, token_ids=None, entity_ids=None, item_ids=None, word_ids=None):
+    #     if token_ids is not None:
+    #         self.context[stage]['context_tokens'].append(token_ids)
+    #     if item_ids is not None:
+    #         self.context[stage]['context_items'] += item_ids
+    #     if entity_ids is not None:
+    #         for entity_id in entity_ids:
+    #             if entity_id not in self.context[stage]['entity_set']:
+    #                 self.context[stage]['entity_set'].add(entity_id)
+    #                 self.context[stage]['context_entities'].append(entity_id)
+    #     if word_ids is not None:
+    #         for word_id in word_ids:
+    #             if word_id not in self.context[stage]['word_set']:
+    #                 self.context[stage]['word_set'].add(word_id)
+    #                 self.context[stage]['context_words'].append(word_id)
 
-    def get_input(self, language):
-        print("Enter [EXIT] if you want to quit.")
+    # def get_input(self, language):
+    #     print("Enter [EXIT] if you want to quit.")
 
-        if language == 'zh':
-            language = 'chinese'
-        elif language == 'en':
-            language = 'english'
-        else:
-            raise
-        text = input(f"Enter Your Message in {language}: ")
+    #     if language == 'zh':
+    #         language = 'chinese'
+    #     elif language == 'en':
+    #         language = 'english'
+    #     else:
+    #         raise
+    #     text = input(f"Enter Your Message in {language}: ")
 
-        if '[EXIT]' in text:
-            self.finished = True
-        return text
+    #     if '[EXIT]' in text:
+    #         self.finished = True
+    #     return text
 
-    def tokenize(self, text, tokenizer, path=None):
-        tokenize_fun = getattr(self, tokenizer + '_tokenize')
-        if path is not None:
-            return tokenize_fun(text, path)
-        else:
-            return tokenize_fun(text)
+    # def tokenize(self, text, tokenizer, path=None):
+    #     tokenize_fun = getattr(self, tokenizer + '_tokenize')
+    #     if path is not None:
+    #         return tokenize_fun(text, path)
+    #     else:
+    #         return tokenize_fun(text)
 
-    def nltk_tokenize(self, text):
-        nltk.download('punkt')
-        return word_tokenize(text)
+    # def nltk_tokenize(self, text):
+    #     nltk.download('punkt')
+    #     return word_tokenize(text)
 
-    def bert_tokenize(self, text, path):
-        if not hasattr(self, 'bert_tokenizer'):
-            from transformers import AutoTokenizer
-            self.bert_tokenizer = AutoTokenizer.from_pretrained(path)
-        return self.bert_tokenizer.tokenize(text)
+    # def bert_tokenize(self, text, path):
+    #     if not hasattr(self, 'bert_tokenizer'):
+    #         from transformers import AutoTokenizer
+    #         self.bert_tokenizer = AutoTokenizer.from_pretrained(path)
+    #     return self.bert_tokenizer.tokenize(text)
 
-    def gpt2_tokenize(self, text, path):
-        if not hasattr(self, 'gpt2_tokenizer'):
-            from transformers import AutoTokenizer
-            self.gpt2_tokenizer = AutoTokenizer.from_pretrained(path)
-        return self.gpt2_tokenizer.tokenize(text)
+    # def gpt2_tokenize(self, text, path):
+    #     if not hasattr(self, 'gpt2_tokenizer'):
+    #         from transformers import AutoTokenizer
+    #         self.gpt2_tokenizer = AutoTokenizer.from_pretrained(path)
+    #     return self.gpt2_tokenizer.tokenize(text)
 
-    def pkuseg_tokenize(self, text):
-        if not hasattr(self, 'pkuseg_tokenizer'):
-            import pkuseg
-            self.pkuseg_tokenizer = pkuseg.pkuseg()
-        return self.pkuseg_tokenizer.cut(text)
+    # def pkuseg_tokenize(self, text):
+    #     if not hasattr(self, 'pkuseg_tokenizer'):
+    #         import pkuseg
+    #         self.pkuseg_tokenizer = pkuseg.pkuseg()
+    #     return self.pkuseg_tokenizer.cut(text)
 
-    def link(self, tokens, entities):
-        linked_entities = []
-        for token in tokens:
-            entity = extractOne(token, entities, score_cutoff=90)
-            if entity:
-                linked_entities.append(entity[0])
-        return linked_entities
+    # def link(self, tokens, entities):
+    #     linked_entities = []
+    #     for token in tokens:
+    #         entity = extractOne(token, entities, score_cutoff=90)
+    #         if entity:
+    #             linked_entities.append(entity[0])
+    #     return linked_entities

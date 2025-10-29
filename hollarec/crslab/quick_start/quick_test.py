@@ -13,7 +13,7 @@ def test_dataset(config):
     print(f'Valid samples: {len(dataset.valid_data)}')
     print(f'Test samples: {len(dataset.test_data)}')
     print(f'Vocabulary size: {len(vocab)}')
-    print(f'Number of items: {side_data["n_entity"]}')
+    # print(f'Number of items: {side_data["n_entity"]}')
 
 if __name__ == "__main__":
     # Load config

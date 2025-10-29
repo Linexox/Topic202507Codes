@@ -31,10 +31,15 @@ class HollaRecDataLoader(BaseDataLoader):
         def rec_process_fn(self):
             # raise NotImplementedError("Data processing function is not implemented yet.")
             augment_dataset = []
-            for data in tqdm(self.dataset, desc='[Dataloader process]'):
-                augment_data = copy(data)
-                # Add any necessary processing steps here
-                augment_dataset.append(augment_data)
+            for conv in tqdm(self.dataset, desc='[Dataloader process]'):
+                if conv['role'] == 'Recommender':
+                    for movie in conv[movies]:
+                        augment_conv = {
+                            'context_tokens': conv['context_tokens'],
+                            'context_movies': conv['context_movies'],
+                            'response_tokens': conv['response_tokens'],
+                            'movie': movie
+                        }
 
             return augment_dataset
         

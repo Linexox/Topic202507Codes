@@ -10,14 +10,14 @@
 
 from loguru import logger
 
-from .conv import ConvEvaluator
-from .rec import RecEvaluator
+# from .conv import ConvEvaluator
+# from .rec import RecEvaluator
 from .standard import StandardEvaluator
 from ..data import dataset_language_map
 
 Evaluator_register_table = {
-    'rec': RecEvaluator,
-    'conv': ConvEvaluator,
+    # 'rec': RecEvaluator,
+    # 'conv': ConvEvaluator,
     'standard': StandardEvaluator
 }
 

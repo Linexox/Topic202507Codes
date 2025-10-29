@@ -31,17 +31,22 @@ class ReDialDataset(BaseDataset):
             logger.info(f"[dataset.redial] Using resource for tokenizer '{tokenize}'.")
 
         self.opt = opt
-        self.dpath = os.path.join(DATASET_PATH, "redial", tokenizer)
-        super().__init__(opt, tokenize, restore, save)
+        self.dpath = os.path.join(DATASET_PATH, "redial", tokenize)
+        logger.info(f"[dataset.redial] Dataset path set to {self.dpath}.")
+
         if tokenizer is not None:
             self.tokenizer = tokenizer
             logger.info("[dataset.redial] Using provided tokenizer with special tokens.")
         else:
+            logger.info(f"[dataset.redial] Loading tokenizer from {os.path.join(self.dpath, 'tokenizer')}.")
             self.tokenizer = AutoTokenizer.from_pretrained(
-                os.path.join(self.dpath, "tokenizer")
+                os.path.join(self.dpath, "tokenizer"),
             )
+            # print(self.tokenizer)
         self._verify_tokenizer_special_tokens()
-            
+    
+        super().__init__(opt, dpath=self.dpath, resource=resource, restore=restore, save=save)
+
 
     def _verify_tokenizer_special_tokens(self):
         DEFAULT_HYPERGRAPH_TOKEN = "<hgraph>"
@@ -56,6 +61,8 @@ class ReDialDataset(BaseDataset):
         ]
         for token in required_tokens:
             if token not in self.tokenizer.get_vocab():
+                print(self.tokenizer.all_special_tokens)
+                logger.error(f"Tokenizer is missing required special token: {token}")
                 raise ValueError(f"Tokenizer is missing required special token: {token}")
         logger.info("[dataset.redial] All required special tokens are present in the tokenizer.")
         self.hg_token_id = self.tokenizer.convert_tokens_to_ids(DEFAULT_HYPERGRAPH_TOKEN)
@@ -71,25 +78,26 @@ class ReDialDataset(BaseDataset):
 
         vocab = {
             'ind2tok': self.ind2tok,
-            'tok2ind': self.tok2ind,
+            'tok2ind': self.token2ind,  # 使用 token2ind
             'ind2movie': self.ind2movie,
             'movie2ind': self.movie2ind,
-            'vocab_size': len(self.tok2ind),
+            'vocab_size': len(self.token2ind),  # 使用 token2ind
             'n_movie': len(self.movie2ind),
         }
         return train_data, valid_data, test_data, vocab
 
     def _load_raw_data(self):
         if not os.path.exists(self.dpath):
-            raise FileNotFoundError(f"Dataset path {self.dpath} does not exist.")
+            logger.error(f"Dataset path {self.dpath} does not exist.")
+            raise FileNotFoundError(f"Dataset `path` {self.dpath} does not exist.")
 
-        with open(os.path.join(self.dpath, "train_data.json"), "rb") as f:
+        with open(os.path.join(self.dpath, "train_data.json"), "r", encoding="utf-8") as f:
             train_data = json.load(f)
             logger.info(f"[dataset.redial] Loaded {len(train_data)} training samples.")
-        with open(os.path.join(self.dpath, "valid_data.json"), "rb") as f:
+        with open(os.path.join(self.dpath, "valid_data.json"), "r", encoding="utf-8") as f:
             valid_data = json.load(f)
             logger.info(f"[dataset.redial] Loaded {len(valid_data)} validation samples.")
-        with open(os.path.join(self.dpath, "test_data.json"), "rb") as f:
+        with open(os.path.join(self.dpath, "test_data.json"), "r", encoding="utf-8") as f:
             test_data = json.load(f)
             logger.info(f"[dataset.redial] Loaded {len(test_data)} test samples.")
 
@@ -97,10 +105,11 @@ class ReDialDataset(BaseDataset):
 
     def _load_vacab(self):
         if not hasattr(self, "tokenizer") or self.tokenizer is None:
+            logger.error("Tokenizer must be set before loading vocabulary.")
             raise ValueError("Tokenizer must be set before loading vocabulary.")
         # self.tok2ind = {token: idx for token, idx in self.tokenizer.get_vocab().items()}
         # self.ind2tok = {idx: token for token, idx in self.tokenizer.get_vocab().items()}
-        with open(os.path.join(self.dpath, 'token2ind.json'), 'rb') as f:
+        with open(os.path.join(self.dpath, 'token2ind.json'), 'r', encoding='utf-8') as f:
             self.token2ind = json.load(f)
             self.ind2tok = {idx: token for token, idx in self.token2ind.items()}
             logger.info("[dataset.redial] Vocabulary loaded from tokenizer.")
@@ -108,8 +117,9 @@ class ReDialDataset(BaseDataset):
 
     def _load_other_data(self):
         if not os.path.exists(self.dpath):
+            logger.error(f"Dataset path {self.dpath} does not exist.")
             raise FileNotFoundError(f"Dataset path {self.dpath} does not exist.")
-        with open(os.path.join(self.dpath, "movie2ind.json"), "rb") as f:
+        with open(os.path.join(self.dpath, "movie2ind.json"), "r", encoding="utf-8") as f:
             self.movie2ind = json.load(f)
             self.ind2movie = {int(movie_id): movie_name for movie_name, movie_id in self.movie2ind.items()}
             logger.info(f"[dataset.redial] Loaded movie vocabulary: {len(self.movie2ind)} movies.")
@@ -122,12 +132,12 @@ class ReDialDataset(BaseDataset):
         #     logger.info(f"[dataset.redial] Loaded movie vocabulary: {len(self.movie2ind)} movies.")
 
     def _data_preprocess(self, train_data, valid_data, test_data):
+        logger.info("[dataset.redial] Processing training data.")
         processed_train_data = self._raw_data_process(train_data)
-        logger.info("[dataset.redial] Processed training data.")
+        logger.info("[dataset.redial] Processing valid data.")
         processed_valid_data = self._raw_data_process(valid_data)
-        logger.info("[dataset.redial] Processed validation data.")
+        logger.info("[dataset.redial] Processing test data.")
         processed_test_data = self._raw_data_process(test_data)
-        logger.info("[dataset.redial] Processed test data.")
         processed_side_data = None
         return processed_train_data, processed_valid_data, processed_test_data, processed_side_data
 
@@ -137,7 +147,7 @@ class ReDialDataset(BaseDataset):
             for diag in raw_data
         ]
         augmented_conv_dicts = []
-        for diag in augmented_data:
+        for diag in tqdm(augmented_data, desc='Processing conversations'):
             augmented_conv_list = self._augment_and_add(diag)
             augmented_conv_dicts.extend(augmented_conv_list)
 
@@ -164,22 +174,23 @@ class ReDialDataset(BaseDataset):
         last_role = None
         for uttr in conv["dialog"]:
             text_token_ids = [
-                self.token2id.get(word, self.token2id["<unk>"])
-                for word in self.tokenizer.encode(uttr["text"])
+                self.token2ind.get(token, self.token2ind["<unk>"])
+                for token in uttr['text']
             ]
-            movie_ids = self._get_movie_mentioned(text=uttr["text"])
-            role = uttr["senderWorkerId"]
+            # movie_ids = self._get_movie_mentioned(text=uttr["text"])
+            role = uttr["role"]
             if role == last_role:
                 augmented_data[-1]["text"] += text_token_ids
-                augmented_data[-1]["movie"] += movie_ids
+                augmented_data[-1]["movies"] += uttr['movies']
             else:
                 augmented_data.append(
                     {
                         "user_id": user_id,
                         "conv_id": conv_id,
                         "role": role,
-                        "text_token_ids": text_token_ids,
-                        "movie_mentioned": movie_ids,
+                        # 'text': uttr['text'],
+                        "text": text_token_ids,
+                        "movies": uttr['movies'],
                     }
                 )
             last_role = role
@@ -187,12 +198,19 @@ class ReDialDataset(BaseDataset):
         return augmented_data
 
     def _augment_and_add(self, raw_conv_dict):
+        """
+        将对话转为历史->当前轮次的形式:
+        {[uttr1]},
+        {[uttr1, uttr2]},
+        {[uttr1, uttr2, uttr3]},
+        ...
+        """
         augmented_conv_dicts = []
         context_tokens, context_movies = [], []
         for i, turn in enumerate(raw_conv_dict):
             # role = turn['role']
-            turn_tokens = turn["text_token_ids"]
-            turn_movies = turn["movie_mentioned"]
+            turn_tokens = turn["text"]
+            turn_movies = turn["movies"]
 
             if len(context_tokens) > 0:
                 conv_dict = {
@@ -200,7 +218,7 @@ class ReDialDataset(BaseDataset):
                     "context_tokens": copy(context_tokens),
                     "context_movies": copy(context_movies),
                     "movies": turn_movies,
-                    "response_tokens": turn_tokens,
+                    "response": turn_tokens,
                 }
                 augmented_conv_dicts.append(conv_dict)
             context_tokens.append(turn_tokens)
