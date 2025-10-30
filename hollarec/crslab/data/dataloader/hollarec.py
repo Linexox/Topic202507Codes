@@ -104,7 +104,6 @@ class HollaRecDataLoader(BaseDataLoader):
         batch_conv_id = []
 
         for conv in batch:
-            # 1. 处理上下文：合并多轮对话 -> 截断
             context = truncate(
                 merge_utt(
                     conv["context_tokens"],
@@ -117,7 +116,6 @@ class HollaRecDataLoader(BaseDataLoader):
             )
             batch_context_tokens.append(context)
 
-            # 2. 处理response：截断 -> 添加start/end token
             response = add_start_end_token_idx(
                 truncate(conv["response"], self.response_truncate - 2),
                 start_token_idx=self.start_token_idx,
@@ -125,21 +123,18 @@ class HollaRecDataLoader(BaseDataLoader):
             )
             batch_response.append(response)
 
-            # 3. 收集电影ID
             batch_context_movies.append(conv["context_movies"])
-
-            # 4. 收集元信息
             batch_user_id.append(conv["user_id"])
             batch_conv_id.append(conv["conv_id"])
 
         # Padding 并转为 tensor
         res = {
             "context_tokens": padded_tensor(
-                batch_context_tokens, self.pad_token_idx, pad_tail=False  # 左padding，保留最近对话
+                batch_context_tokens, self.pad_token_idx, pad_tail=False
             ),
-            "context_movies": batch_context_movies,  # 保持为list，模型内部处理
+            "context_movies": batch_context_movies,
             "response": padded_tensor(
-                batch_response, self.pad_token_idx, pad_tail=True  # 右padding
+                batch_response, self.pad_token_idx, pad_tail=True
             ),
             "user_id": batch_user_id,
             "conv_id": batch_conv_id,

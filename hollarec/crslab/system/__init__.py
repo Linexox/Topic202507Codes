@@ -14,9 +14,10 @@
 
 
 from loguru import logger
+from crslab.system.hollarec import HollaRecSystem
 
 system_register_table = {
-    'base': 'BaseSystem',
+    'HollaRec': HollaRecSystem,
 }
 
 
