@@ -39,6 +39,6 @@ if __name__ == '__main__':
     config = Config(args.config, args.gpu, args.debug)
 
     # from crslab.quick_start import run_crslab
-    from crslab.quick_start import test_dataset
+    from crslab.quick_start import run_quick_test
 
-    test_dataset(config)
+    run_quick_test(config)

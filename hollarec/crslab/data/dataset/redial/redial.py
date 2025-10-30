@@ -93,10 +93,10 @@ class ReDialDataset(BaseDataset):
 
         vocab = {
             "ind2tok": self.ind2tok,
-            "tok2ind": self.token2ind,  # 使用 token2ind
+            "tok2ind": self.token2ind,
             "ind2movie": self.ind2movie,
             "movie2ind": self.movie2ind,
-            "vocab_size": len(self.token2ind),  # 使用 token2ind
+            "vocab_size": len(self.token2ind),
             "n_movie": len(self.movie2ind),
         }
         return train_data, valid_data, test_data, vocab
@@ -222,7 +222,8 @@ class ReDialDataset(BaseDataset):
         """
         augmented_conv_dicts = []
         context_tokens, context_movies = [], []
-        # conv_id = raw_conv_dict[0]["conv_id"]
+        conv_id = raw_conv_dict[0]["conv_id"]
+        user_id = raw_conv_dict[0]["user_id"]
         for i, turn in enumerate(raw_conv_dict):
             # role = turn['role']
             turn_tokens = turn["text"]
@@ -233,6 +234,8 @@ class ReDialDataset(BaseDataset):
                     "role": turn["role"],
                     "movies": turn_movies,
                     "response": turn_tokens,
+                    "user_id": user_id,
+                    "conv_id": conv_id,
                     "context_tokens": copy(context_tokens),
                     "context_movies": copy(context_movies),
                 }

@@ -141,8 +141,33 @@ def truncate(vec, max_length, truncate_tail=True):
         return vec[-max_length:]
 
 
-def merge_utt(conversation, split_token_idx=None, keep_split_in_tail=False, final_token_idx=None):
-    """merge utterances in one conversation.
+# def merge_utt(conversation, split_token_idx=None, keep_split_in_tail=False, final_token_idx=None):
+#     """merge utterances in one conversation.
+
+#     Args:
+#         conversation (list of list of int): conversation consist of utterances consist of tokens.
+#         split_token_idx (int): index of split token. Defaults to None.
+#         keep_split_in_tail (bool): split in tail or head. Defaults to False.
+#         final_token_idx (int): index of final token. Defaults to None.
+
+#     Returns:
+#         list: tokens of all utterances in one list.
+
+#     """
+#     merged_conv = []
+#     for utt in conversation:
+#         for token in utt:
+#             merged_conv.append(token)
+#         if split_token_idx:
+#             merged_conv.append(split_token_idx)
+#     if split_token_idx and not keep_split_in_tail:
+#         merged_conv = merged_conv[:-1]
+#     if final_token_idx:
+#         merged_conv.append(final_token_idx)
+#     return merged_conv
+
+def merge_utt(conversation, start_token_idx=None, split_token_idx=None, keep_split_in_tail=False, final_token_idx=None):
+    """merge utterances in one conversation. 合并对话中的多个话语
 
     Args:
         conversation (list of list of int): conversation consist of utterances consist of tokens.
@@ -155,6 +180,8 @@ def merge_utt(conversation, split_token_idx=None, keep_split_in_tail=False, fina
 
     """
     merged_conv = []
+    if start_token_idx:
+        merged_conv.append(start_token_idx)
     for utt in conversation:
         for token in utt:
             merged_conv.append(token)
