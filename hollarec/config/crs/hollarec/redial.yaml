@@ -8,5 +8,5 @@ context_truncate: 256
 response_truncate: 30
 scale: 1
 # model
-
+model: HollaRec
 # optim

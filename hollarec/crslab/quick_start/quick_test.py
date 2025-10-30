@@ -24,15 +24,13 @@ def test_dataloader(config):
     vocab = dataset.vocab
 
     # Load dataloader
-    dataloader = get_dataloader(config, dataset, vocab, restore=False, save=False)
+    dataloader = get_dataloader(config, dataset.train_data, vocab)
+    dataloader
+    for batch in dataloader.get_conv_data(batch_size=4, shuffle=False):
+        print(f"Batch data sample: {batch}")
+        break
+    
 
-    train_loader = dataloader.get_loader("train")
-    for i, batch in enumerate(train_loader):
-        print(f"Batch {i}:")
-        for key in batch:
-            print(f"  {key}: {batch[key].shape if hasattr(batch[key], 'shape') else batch[key]}")
-        if i == 2:  # Just test first 3 batches
-            break
 
 
 # if __name__ == "__main__":

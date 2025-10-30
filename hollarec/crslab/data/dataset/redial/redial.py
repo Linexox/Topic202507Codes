@@ -93,11 +93,11 @@ class ReDialDataset(BaseDataset):
 
         vocab = {
             "ind2tok": self.ind2tok,
-            "tok2ind": self.token2ind,
+            "tok2ind": self.tok2ind,
             "ind2movie": self.ind2movie,
             "movie2ind": self.movie2ind,
-            "vocab_size": len(self.token2ind),
-            "n_movie": len(self.movie2ind),
+            "vocab_size": len(self.tok2ind),
+            "n_movies": len(self.movie2ind),
         }
         return train_data, valid_data, test_data, vocab
 
@@ -125,10 +125,10 @@ class ReDialDataset(BaseDataset):
         # self.tok2ind = {token: idx for token, idx in self.tokenizer.get_vocab().items()}
         # self.ind2tok = {idx: token for token, idx in self.tokenizer.get_vocab().items()}
         with open(os.path.join(self.dpath, "token2ind.json"), "r", encoding="utf-8") as f:
-            self.token2ind = json.load(f)
-            self.ind2tok = {idx: token for token, idx in self.token2ind.items()}
+            self.tok2ind = json.load(f)
+            self.ind2tok = {idx: token for token, idx in self.tok2ind.items()}
             logger.info("[dataset.redial] Vocabulary loaded from tokenizer.")
-            logger.info(f"[dataset.redial] Vocabulary size: {len(self.token2ind)} tokens.")
+            logger.info(f"[dataset.redial] Vocabulary size: {len(self.tok2ind)} tokens.")
 
     def _load_other_data(self):
         if not os.path.exists(self.dpath):
@@ -191,7 +191,7 @@ class ReDialDataset(BaseDataset):
         last_role = None
         for uttr in conv["dialog"]:
             text_token_ids = [
-                self.token2ind.get(token, self.token2ind["<unk>"]) for token in uttr["text"]
+                self.tok2ind.get(token, self.tok2ind["<unk>"]) for token in uttr["text"]
             ]
             # movie_ids = self._get_movie_mentioned(text=uttr["text"])
             role = uttr["role"]
