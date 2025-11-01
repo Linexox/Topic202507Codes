@@ -148,7 +148,7 @@ class HypergraphLlavaModel(LlavaModel):
                             # Single modality hypergraph
                             node_forward_out = graph_tower(g)
                             hypergraph_node_features.append(node_forward_out)
-                        elif isinstance(g, dict):
+                        elif isinstance(g, dict): 
                             # Multi-modality hypergraphs
                             # Process each modality and concatenate or handle separately
                             modality_features = {}
@@ -310,7 +310,7 @@ class HypergraphLlavaForCausalLM(nn.Module):
     
     def get_graph_tower(self):
         return self.get_model().get_graph_tower()
-    
+      
     def get_input_embeddings(self):
         # return self.model.embed_tokens
         return self.model.get_input_embeddings()

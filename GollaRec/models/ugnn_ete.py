@@ -70,15 +70,22 @@ class UGNN_ete(MultiModalEndtoEndRecommender):
             self.p_vat = self.config['mask_p']
 
     def sgl_encoder(self, user_emb, item_emb, perturbed_adj=None):
-        ego_embeddings = torch.cat([user_emb, item_emb], 0)
+        """
+        Args:
+            user_emb: user embedding matrix
+            item_emb: item embedding matrix
+            perturbed_adj: augmented adjacency matrix
+        """
+        ego_embeddings = torch.cat([user_emb, item_emb], 0) # shape: (num_users + num_items, latent_dim)
         all_embeddings = [ego_embeddings]
         for k in range(self.n_layers):
             if perturbed_adj is not None:
                 if isinstance(perturbed_adj, list):
+                    # shape of perturbed_adj[k]: (num_users + num_items, num_users + num_items)
                     ego_embeddings = torch.sparse.mm(perturbed_adj[k], ego_embeddings)
                 else:
                     ego_embeddings = torch.sparse.mm(perturbed_adj, ego_embeddings)
-            else:
+            else: # 如果没有传入扰动邻接矩阵，则使用原始的归一化邻接矩阵
                 ego_embeddings = torch.sparse.mm(self.norm_adj, ego_embeddings)
             all_embeddings.append(ego_embeddings)
         all_embeddings = torch.stack(all_embeddings, dim=1)

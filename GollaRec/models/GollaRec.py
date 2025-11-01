@@ -55,6 +55,9 @@ class GollaRec(MultiModalEndtoEndRecommender):
         else:
             self.a_feat = None
         self.item_feat_dim = self.latent_dim * 3
+
+        # read_user/item 用于融合多模态特征
+        # 3*latent_dim: i_emb + v_emb + t_emb/a_emb
         self.read_user = nn.Linear(self.item_feat_dim, self.latent_dim)
         self.read_item = nn.Linear(self.item_feat_dim, self.latent_dim)
         self.initializer(self.read_user.weight)
@@ -63,6 +66,10 @@ class GollaRec(MultiModalEndtoEndRecommender):
         self.norm_adj = self.convert_sparse_mat_to_tensor(sp_adj).to(self.device)
 
     def graph_adapter(self, user_emb, item_emb, perturbed_adj=None):
+        """
+        图卷积编码器, 通过多层传播聚合邻居信息
+        sgl_encoder
+        """
         ego_embeddings = torch.cat([user_emb, item_emb], 0)
         all_embeddings = [ego_embeddings]
         for k in range(self.n_layers):
@@ -82,15 +89,19 @@ class GollaRec(MultiModalEndtoEndRecommender):
     def compute(self):
         """
          融合多模态特征与协同过滤特征
+         计算用户和物品的最终嵌入表示
         """
-        users_emb = self.embedding_user.weight
-        items_emb = self.embedding_item.weight
+        users_emb = self.embedding_user.weight # 用户嵌入矩阵
+        items_emb = self.embedding_item.weight # 物品嵌入矩阵
+        
+        # self.v_feat通过build_embeds()从多模态编码器提取
+        if self.v_feat is not None: # 如果有视觉特征
+            self.v_dense_emb = self.v_dense(self.v_feat)  # v=>id # 视觉特征映射到潜在空间
+        # 使用SGC编码器分别对协同过滤特征和视觉特征进行编码，使用归一化邻接矩阵
+        self.i_emb_u, self.i_emb_i = self.sgl_encoder(users_emb, items_emb) # 协同过滤特征编码
+        self.v_emb_u, self.v_emb_i = self.sgl_encoder(users_emb, self.v_dense_emb) # 视觉特征编码
 
-        if self.v_feat is not None:
-            self.v_dense_emb = self.v_dense(self.v_feat)  # v=>id
-        self.i_emb_u, self.i_emb_i = self.sgl_encoder(users_emb, items_emb)
-        self.v_emb_u, self.v_emb_i = self.sgl_encoder(users_emb, self.v_dense_emb)
-
+        # 融合不同模态的嵌入表示
         if self.config["dataset"] == "kwai":
             user = self.read_user(
                 torch.cat([self.i_emb_u, self.v_emb_u]), dim=1)
@@ -98,16 +109,16 @@ class GollaRec(MultiModalEndtoEndRecommender):
                 torch.cat([self.i_emb_i, self.v_emb_i]))
         elif self.config["dataset"] == "sports" or "baby" or "elec" or "clothing":
             if self.t_feat is not None:
-                self.t_dense_emb = self.t_dense(self.t_feat)  # t=>id
+                self.t_dense_emb = self.t_dense(self.t_feat)  # t=>id # 文本特征映射到潜在空间
                 self.t_emb_u, self.t_emb_i = self.sgl_encoder(users_emb, self.t_dense_emb)
             user = self.read_user(torch.cat([self.i_emb_u, self.v_emb_u, self.t_emb_u], dim=1))
             item = self.read_item(torch.cat([self.i_emb_i, self.v_emb_i, self.t_emb_i], dim=1))
         elif self.config["dataset"] == "tiktok":
             if self.a_feat is not None:
-                self.a_dense_emb = self.a_dense(self.a_feat)  # a=>id
+                self.a_dense_emb = self.a_dense(self.a_feat)  # a=>id # 音频特征映射到潜在空间
                 self.a_emb_u, self.a_emb_i = self.sgl_encoder(users_emb, self.a_dense_emb)
             if self.t_feat is not None:
-                self.t_dense_emb = self.t_dense(self.t_feat)  # t=>id
+                self.t_dense_emb = self.t_dense(self.t_feat)  # t=>id # 文本特征映射到潜在空间
                 self.t_emb_u, self.t_emb_i = self.sgl_encoder(users_emb, self.t_dense_emb)
             user = self.read_user(torch.cat([self.i_emb_u, self.v_emb_u, self.a_emb_u, self.t_emb_u], dim=1))
             item = self.read_item(torch.cat([self.i_emb_i, self.v_emb_i, self.a_emb_u, self.t_emb_i], dim=1))
@@ -332,12 +343,17 @@ class GollaRec(MultiModalEndtoEndRecommender):
         ###
 
     def full_sort_predict(self, interaction, candidate_items=None):
+        """为所有物品计算分数以进行排序评估"""
         users = interaction[0]
         users_emb = self.user_embeddings[users]
         if candidate_items is None:
-            items_emb = self.item_embeddings
+            items_emb = self.item_embeddings # 所有物品
         else:
-            items_emb = self.item_embeddings[torch.tensor(candidate_items).long().to(self.device, dtype=torch.float16)]
+            items_emb = self.item_embeddings[torch.tensor(candidate_items).long().to(self.device, dtype=torch.float16)] # 候选物品
+        # 矩阵乘法计算分数
+        # user_emb: [batch_size, latent_dim]
+        # item_emb: [num_items, latent_dim]
+        # scores: [batch_size, num_items]
         scores = torch.matmul(users_emb, items_emb.t())
 
         return self.sigmoid(scores)

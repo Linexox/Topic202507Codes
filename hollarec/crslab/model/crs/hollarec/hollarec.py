@@ -11,14 +11,14 @@ from torch_geometric.nn import RGCNConv, HypergraphConv
 
 from crslab.config import DATASET_PATH
 from crslab.model.base import BaseModel
-from crslab.model.crs.hollarec.hypergraph_llava import HypergraphLlavaCRS
+from .HypergraphLlava import HypergraphLlavaConfig, HypergraphLlavaModel, HypergraphLlavaForCausalLM
+# from crslab.model.crs.hollarec.hypergraph_llava import HypergraphLlavaCRS
 # from crslab.model.utils.modules.attention import
 
 
 class HollaRec(BaseModel):
     def __init__(self, opt, device, vocab, side_data=None):
         """
-
         Args:
             opt (Config or dict): config for model or the whole system.
             device (torch.device): device for model running.
@@ -49,4 +49,23 @@ class HollaRec(BaseModel):
         self.side_data = side_data
     
     def build_model(self, *args, **kwargs):
+        pass
+
+    def recommend(self, batch, mode):
+        context_movies = batch["context_movies"]  
+        context_tokens = batch["context_tokens"]
+        pass
+
+    def converse(self, batch, mode):
+        pass
+
+    def forward(self, batch, mode, stage):
+        if stage == "conv":
+            return self.converse(batch, mode)
+        elif stage == "rec":
+            return self.recommend(batch, mode)
+        else:
+            raise ValueError("stage must be in ['conv', 'rec']")
+
+    
         

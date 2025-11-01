@@ -309,8 +309,10 @@ class Trainer(AbstractTrainer):
             scores = self.model.full_sort_predict(batched_data)
             masked_items = batched_data[1]
             # mask out pos items
+            # ？mask已经交互过的物品
             scores[masked_items[0], masked_items[1]] = -1e10
             # rank and get top-k
+            # 获取top-k物品的索引
             _, topk_index = torch.topk(scores, max(self.config['topk']), dim=-1)  # nusers x topk
             batch_matrix_list.append(topk_index)
         return self.evaluator.evaluate(batch_matrix_list, eval_data, is_test=is_test, idx=idx)

@@ -369,7 +369,7 @@ class BEiT3ForRecsys(BEiT3Wrapper):
         txt_cls_rep = self.txt_pooler(x[:, 198:, :])
         if only_infer:
             return img_cls_rep, txt_cls_rep
-        else:
+        else: # 计算对比损失
             loss, _, _, = self.criterion(
                 img_cls_rep, txt_cls_rep, self.logit_scale.exp())
         return img_cls_rep, txt_cls_rep, loss

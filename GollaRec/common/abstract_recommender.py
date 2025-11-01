@@ -222,6 +222,12 @@ class MultiModalEndtoEndRecommender(AbstractRecommender):
         return data_loader
 
     def build_multiModalEncoder(self, config):
+        """
+        构建多模态编码器
+        根据配置选择不同的多模态模型（如 BEiT-3、VLMo、CLIP）
+        创建并返回相应的多模态编码器实例
+        多模态编码器用于将图像和文本输入转换为向量表示
+        """
         # build vision encoder
         if 'beit3' in config['multi_modal_encoder']:
 
@@ -272,9 +278,16 @@ class MultiModalEndtoEndRecommender(AbstractRecommender):
         return multimodal_encoder
 
     def build_embeds(self, config, multimodal_encoder, data_loader):
+        """
+        使用多模态编码器（MLLM）从dataloader中提取图像和文本的特征（嵌入向量）
+        连接原始数据和推荐任务数据器
+        """
+
         if 'beit3' in self.config['multi_modal_encoder'] and self.config['using_cls_feature']:
             # self.device = 'cuda'
-
+            """
+            融合表示
+            """
             cls_reps = []
             for batch in data_loader:
                 batch['image'] = batch['image'].to(self.device)
@@ -283,10 +296,12 @@ class MultiModalEndtoEndRecommender(AbstractRecommender):
 
                 multimodal_encoder.to(self.device)
 
+                # 前向传播，获取CLS特征
                 cls_rep = multimodal_encoder(
                     image=batch['image'], text_description=batch['language_tokens'],
-                    padding_mask=batch['padding_mask'], only_infer=True)
+                    padding_mask=batch['padding_mask'], only_infer=True) # only_infer=True表示只进行推理，不做训练（对比损失）
 
+                # 收集CLS特征
                 for embed in cls_rep.unbind():
                     cls_reps.append(embed.detach().cpu().numpy())
 
@@ -294,6 +309,9 @@ class MultiModalEndtoEndRecommender(AbstractRecommender):
                 self.device)
 
         elif 'beit3' in self.config['multi_modal_encoder']:
+            """
+            
+            """
             # self.device = 'cuda'
             multimodal_encoder.zero_grad()
             text_embeddings = []
@@ -399,12 +417,14 @@ class MultiModalEndtoEndRecommender(AbstractRecommender):
 
     def update_train_embeddings(self):
         if 'beit3' in self.config['multi_modal_encoder'] and self.config['using_cls_feature']:
+            # 融合表示
             self.cls_train_feat \
                 = self.build_embeds(self.config,
                                     self.multi_modal_encoder,
                                     self.train_data_loader)
 
         else:
+            # 单独的视觉和文本表示
             self.v_train_feat, self.t_train_feat \
                 = self.build_embeds(self.config,
                                     self.multi_modal_encoder,

@@ -278,6 +278,12 @@ class MMGCL(GeneralRecommender):
         return users_sub, items_sub, neg_items_sub
 
     def cal_multiview_MM_ED_CN(self, users, pos_items, neg_items):
+        """
+        计算多视图多模态对比损失
+        结合边删除（ED）、模态遮挡（MM）和对比负样本（CN）的方法
+        通过不同的数据增强技术生成多个视图的用户和物品嵌入
+        并计算它们之间的对比损失，以增强模型的鲁棒性
+        """
         if self.config["ssl_task"] == "ED+MM":
             users_sub_1, items_sub_1, _ = self.modality_edge_dropout_emb(users, pos_items, neg_items)
             users_sub_2, items_sub_2, _ = self.modality_masking_emb(users, pos_items, neg_items, self.p_vat)
