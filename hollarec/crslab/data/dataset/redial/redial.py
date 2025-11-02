@@ -140,13 +140,84 @@ class ReDialDataset(BaseDataset):
                 int(movie_id): movie_name for movie_name, movie_id in self.movie2ind.items()
             }
             logger.info(f"[dataset.redial] Loaded movie vocabulary: {len(self.movie2ind)} movies.")
+        
+        if self.opt.get("load_saved_embeddings", False):
+            self.txt_dim = self.opt.get("txt_dim", 0)
+            self.img_dim = self.opt.get("img_dim", 0)
+            self.vdo_dim = self.opt.get("vdo_dim", 0)
+            self.ado_dim = self.opt.get("ado_dim", 0)
+            logger.info(f"modalities dimensions - txt: {self.txt_dim}, img: {self.img_dim}, vdo: {self.vdo_dim}, ado: {self.ado_dim}")
+            self._load_embeddings()
+            self.emb_paths = {
+                'txt': os.path.join(self.dpath, "embeddings", "txt_emb"),
+                'img': os.path.join(self.dpath, "embeddings", "img_emb"),
+                'vdo': os.path.join(self.dpath, "embeddings", "vdo_emb"),
+                'ado': os.path.join(self.dpath, "embeddings", "audio_emb")
+            }
+                
+            logger.info("[dataset.redial] Initialized lazy loading for multi-modal embeddings.")
+            logger.info(f"[dataset.redial] Total movies: {len(self.movie2ind)}")
+        else:
+            logger.error("Loading embeddings on-the-fly is not implemented yet.")
+            raise NotImplementedError("Loading embeddings on-the-fly is not implemented yet.")
+    
+    def _load_embeddings(self):
+        print(os.listdir(os.path.join(self.dpath, "embeddings")))
+        self.embeddings = {}
+        
+        # 优化：移除不必要的 with 上下文（torch.load 会自动关闭）
+        self.embeddings['txt'] = torch.load(
+            os.path.join(self.dpath, "embeddings", "txt_embeddings.pt"),
+            map_location='cpu'  # 明确指定加载到 CPU，避免意外的设备转换
+        )
+        logger.info("[dataset.redial] txt embeddings loaded from files.")
+    
+        self.embeddings['img'] = torch.load(
+            os.path.join(self.dpath, "embeddings", "img_embeddings.pt"),
+            map_location='cpu'
+        )
+        logger.info("[dataset.redial] img embeddings loaded from files.")
+        
+        self.embeddings['vdo'] = torch.load(
+            os.path.join(self.dpath, "embeddings", "vdo_embeddings.pt"),
+            map_location='cpu'
+        )
+        logger.info("[dataset.redial] vdo embeddings loaded from files.")
+        
+        self.embeddings['ado'] = torch.load(
+            os.path.join(self.dpath, "embeddings", "ado_embeddings.pt"),
+            map_location='cpu'
+        )
+        logger.info("[dataset.redial] ado embeddings loaded from files.")
+        logger.info("[dataset.redial] All multi-modal embeddings loaded from files.")
+        
+        # 优化：预创建零向量，避免每次动态创建
+        self.zero_embeddings = {
+            'txt': torch.zeros(self.txt_dim),
+            'img': torch.zeros(self.img_dim),
+            'vdo': torch.zeros(self.vdo_dim),
+            'ado': torch.zeros(self.ado_dim)
+        }
+    
+    def get_embedding(self, movie_id, modality='txt'):
+        assert modality in ['txt', 'img', 'vdo', 'ado'], "Modality must be one of 'txt', 'img', 'vdo', 'ado'."
+        if movie_id in self.embeddings[modality]:
+            # 优化：直接返回，detach() 是多余的（加载的 embeddings 默认不需要梯度）
+            # 并且在 forward 中已经有 .to(device) 会创建副本，这里不需要额外操作
+            return self.embeddings[modality][movie_id]
+        else:
+            # 优化：使用预创建的零向量，避免每次创建新 tensor
+            return self.zero_embeddings[modality]
 
-        # with open(os.path.join(self.dpath, "movie_mentioned.csv"), "rb") as f:
-        #     movies = pd.read_csv(f)
-        #     logger.info(f"[dataset.redial] Loaded {len(movies)} movie samples.")
-        #     self.movie2ind = {row["movieName"]: row["movieId"] for _, row in movies.iterrows()}
-        #     self.ind2movie = {row["movieId"]: row["movieName"] for _, row in movies.iterrows()}
-        #     logger.info(f"[dataset.redial] Loaded movie vocabulary: {len(self.movie2ind)} movies.")
+    def _get_zero_embedding(self, modality):
+        # 已废弃：改用预创建的 self.zero_embeddings
+        dims = {
+            'txt': self.txt_dim,
+            'img': self.img_dim,
+            'vdo': self.vdo_dim,
+            'ado': self.ado_dim
+        }
+        return torch.zeros(dims[modality])
 
     def _data_preprocess(self, train_data, valid_data, test_data):
         logger.info("[dataset.redial] Processing training data.")
@@ -167,7 +238,7 @@ class ReDialDataset(BaseDataset):
         for diag in tqdm(augmented_data, desc="Processing conversations"):
             augmented_conv_list = self._augment_and_add(diag)
             augmented_conv_dicts.extend(augmented_conv_list)
-
+     
         return augmented_conv_dicts
 
     def _get_movie_mentioned(self, text: str = None, text_token_ids: list = None):

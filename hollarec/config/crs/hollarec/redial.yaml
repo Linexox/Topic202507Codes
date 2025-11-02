@@ -2,6 +2,12 @@
 #dataset
 dataset: ReDial
 tokenize: llava
+mm_unified_dim: 4096
+ado_dim : 1024
+vdo_dim : 2048
+img_dim : 512
+txt_dim : 1024
+load_saved_embeddings: embeddings
 # dataloader
 related_truncate: 1024
 context_truncate: 256
@@ -9,4 +15,6 @@ response_truncate: 30
 scale: 1
 # model
 model: HollaRec
+load_mm_proj_weights: false
+mm_proj_weight_path : 'hollarec/pretrain/mm_proj_weight.pth'
 # optim

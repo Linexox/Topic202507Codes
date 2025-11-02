@@ -1,7 +1,7 @@
 from crslab.config import Config
 from crslab.data import get_dataset, get_dataloader
 from crslab.system import get_system
-
+from loguru import logger
 
 def test_dataset(config):
     """A quick test for dataset loading."""
@@ -42,3 +42,5 @@ def run_quick_test(config):
     test_dataset(config)
     # Test dataloader
     test_dataloader(config)
+
+    logger.info("*** RUN QUICK TEST SUCCESSFULLY! ***")
