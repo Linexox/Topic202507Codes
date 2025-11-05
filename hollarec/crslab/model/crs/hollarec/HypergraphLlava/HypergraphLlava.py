@@ -29,6 +29,20 @@ class HypergraphPretrainConfig(AutoConfig):
 
 class HypergraphLlavaModel(LlavaModel):
     config_class = HypergraphLlavaConfig
+    """
+    config contents:
+    graph_tower: str, type of hypergraph tower, e.g., 'HGNN'
+    hg_hiddens_size: int, hidden size of hypergraph tower
+    hg_num_layers: int, number of layers in hypergraph tower
+    hg_dropout: float, dropout rate in hypergraph tower
+    use_graph_proj: bool, whether to use graph projector
+    hidden_size: int, hidden size of LLM
+    hg_patch_token: int, token id for hypergraph patch token
+    use_hg_start_end: bool, whether to use start/end tokens for hypergraph patches
+    hg_start_token: int, token id for hypergraph start token
+    hg_end_token: int, token id for hypergraph end token
+
+    """
 
     def __init__(self, config: HypergraphLlavaConfig):
         super().__init__(config)
@@ -182,7 +196,7 @@ class HypergraphLlavaModel(LlavaModel):
             # TODO Merge hypergraph features into input embeddings
             for cur_input_ids, cur_input_embeds in zip(input_ids, inputs_embeds):
                 # Check if current sample has hypergraph patch tokens
-                if (cur_input_ids == graph_tower.config.hypergraph_patch_token).sum() == 0:
+                if (cur_input_ids == graph_tower.config.hg_patch_token).sum() == 0:
                     # No hypergraph in this sample, keep text embeddings only
                     cur_input_embeds = cur_input_embeds + (0. * dummy_graph_features).sum()
                     new_input_embeds.append(cur_input_embeds)
@@ -234,10 +248,10 @@ class HypergraphLlavaModel(LlavaModel):
                     num_patches = cur_graph_features.shape[0]
                     
                     # Verify patch token count matches
-                    if (cur_input_ids == graph_tower.config.hypergraph_patch_token).sum() != num_patches:
+                    if (cur_input_ids == graph_tower.config.hg_patch_token).sum() != num_patches:
                         raise ValueError("The number of hypergraph patch tokens should be the same as the number of hypergraph patches.")
                     
-                    masked_indices = torch.where(cur_input_ids == graph_tower.config.hypergraph_patch_token)[0]
+                    masked_indices = torch.where(cur_input_ids == graph_tower.config.hg_patch_token)[0]
                     mask_index_start = masked_indices[0]
                     
                     # Verify patch tokens are consecutive 保证位置连续
@@ -516,7 +530,7 @@ class HypergraphLlavaForCausalLM(nn.Module):
                         f"Number of new tokens: {num_new_tokens}."
                     )
         
-        hypergraph_config.hypergraph_patch_token = tokenizer.convert_tokens_to_ids(
+        hypergraph_config.hg_patch_token = tokenizer.convert_tokens_to_ids(
             [DEFAULT_HYPERGRAPH_PATCH_TOKEN]
         )[0]
 

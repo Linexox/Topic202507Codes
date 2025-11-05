@@ -1,3 +1,4 @@
+from unittest.mock import Base
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,6 +7,7 @@ import json
 from transformers import AutoModel, AutoTokenizer
 from loguru import logger
 
+from crslab.model.base import BaseModel
 from .HypergraphLlava import HypergraphLlavaModel, HypergraphLlavaConfig
 
 class MultiModalContrastiveLoss(nn.Module):
@@ -37,12 +39,10 @@ class MultiModalContrastiveLoss(nn.Module):
         neg_sim_matrix = torch.matmul(features_a, features_b.t()) # (batch_size, batch_size)
         exp_neg_sim = torch.exp(neg_sim_matrix / self.temperature).sum(dim=1) - exp_pos_sim # (batch_size,)
         
+        exp_neg_sim = torch.clamp(exp_neg_sim, min=1e-8) 
         loss = -torch.sum(torch.log(exp_pos_sim / exp_neg_sim)) / batch_size
-        
-        
         return loss
- 
-       
+
 class ModalityAdaptor(nn.Module):
     def __init__(self, config):
         super(ModalityAdaptor, self).__init__()
@@ -54,7 +54,6 @@ class ModalityAdaptor(nn.Module):
         self.vdo_dim = config.get('vdo_dim')
         self.ado_dim = config.get('ado_dim')
 
-        # self.mm_proj = nn.Linear(self.txt_dim + self.img_dim + self.vdo_dim + self.ado_dim, self.unified_dim)
         self.txt_proj = nn.Linear(self.txt_dim, self.unified_dim)
         self.img_proj = nn.Linear(self.img_dim, self.unified_dim)
         self.vdo_proj = nn.Linear(self.vdo_dim, self.unified_dim)
@@ -150,12 +149,51 @@ class ModalityAdaptor(nn.Module):
         else:
             raise NotImplementedError(f"Fusion method '{method}' not implemented.")
         return fused_emb
-        
-class HypergraphLlava4Recsys(nn.Module):
+
+class HypergraphLlava4Recsys(BaseModel):
     # config_class = HypergraphLlavaConfig
-    def __init__(self, config):
-        super(HypergraphLlava4Recsys, self).__init__()
-        self.modality_adaptor = ModalityAdaptor(config)
+    def __init__(self, opt, device, vocab):
+        self.device = device
+        self.gpu = opt.get("gpu", -1)
+        assert self.dataset in ["redial"]
+        #vocab
+        self.pad_token_id = vocab['tok2id']['<pad>']
+        self.start_token_id = vocab['tok2id']['<s>']
+        self.end_token_id = vocab['tok2id']['</s>']
+        self.vocab_size = vocab['vocab_size']
+        self.token_emb_dim = opt.get('token_emb_dim', 4096)
         
-    def forward(self):
+        super().__init__(opt, device)
+    
+    def build_model(self, *args, **kwargs):
+        self.modality_adaptor = ModalityAdaptor(self.config)
+        pass
+
+    def converse(self, batch, mode):
+        pass
+
+    def recommend(self, batch, mode):
+        context_tokens = batch['context_tokens']
+        context_movies = batch['context_movies']
+        batch_size = len(context_tokens)
+        
+        pass
+
+    def modality_finetune(self, batch, mode):
+        pass
+
+    def graph_finetune(self, batch, mode):
+        pass
+
+    def instruction_finetune(self, batch, mode):
+        pass
+
+    def forward(self, batch, mode, stage):
+        if len(self.gpu)>=2:
+            logger.error("Not support multi-gpu training for HypergraphLlava4Recsys model yet.")
+            raise NotImplementedError
+        if stage=='conv':
+            return self.converse(batch, mode)
+        if stage == 'rec':
+            return self.recommend(batch, mode)
         pass

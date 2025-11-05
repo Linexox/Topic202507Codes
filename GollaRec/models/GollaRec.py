@@ -65,7 +65,8 @@ class GollaRec(MultiModalEndtoEndRecommender):
         sp_adj = self.convert_to_laplacian_mat(self.ui_interaction)
         self.norm_adj = self.convert_sparse_mat_to_tensor(sp_adj).to(self.device)
 
-    def graph_adapter(self, user_emb, item_emb, perturbed_adj=None):
+    # def graph_adapter(self, user_emb, item_emb, perturbed_adj=None):
+    def sgl_encoder(self, user_emb, item_emb, perturbed_adj=None):
         """
         图卷积编码器, 通过多层传播聚合邻居信息
         sgl_encoder

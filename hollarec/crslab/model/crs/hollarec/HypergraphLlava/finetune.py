@@ -1,60 +1,42 @@
 # from .HypergraphLlava4Recsys import ModalityAdaptor
 from .HypergraphLlava4Recsys import ModalityAdaptor
 
+import os
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from typing import Dict
 from loguru import logger
 from tqdm import tqdm
-import sys
-import os
-import signal
-import atexit
-import traceback
 
+from crslab.config import PRETRAIN_PATH
 
-# 全局变量记录当前状态
 current_epoch = 0
 current_batch = 0
-
-
-def _signal_handler(signum, frame):
-    """捕获系统信号（如强制终止）"""
-    logger.critical(f"Received signal {signum}! Program is being terminated.")
-    logger.critical(f"Last known state: Epoch {current_epoch}, Batch {current_batch}")
-    sys.exit(1)
-
-
-def _on_exit():
-    """程序退出时的清理函数"""
-    logger.warning(f"Program exiting. Last state: Epoch {current_epoch}, Batch {current_batch}")
-    sys.stdout.flush()
-    sys.stderr.flush()
-
-
-# 注册信号处理器和退出处理器
-signal.signal(signal.SIGTERM, _signal_handler)
-signal.signal(signal.SIGINT, _signal_handler)
-try:
-    signal.signal(signal.SIGBREAK, _signal_handler)  # Windows特有
-except AttributeError:
-    pass
-
-atexit.register(_on_exit)
 
 class ModalityAdaptorDataset(Dataset):
     def __init__(self, dataset):
         self.dataset = dataset
-        # 获取所有电影ID列表
-        self.movie_ids = list(dataset.movie2ind.values())
-        
+        self.movie_ids = self.filter(list(dataset.movie2ind.values()))
+        # self.movie_ids = list(dataset.movie2ind.values())
+        # print(type(self.movie_ids[0]))
+
+    def filter(self, raw_movie_ids):
+        movie_ids = [
+            mid for mid in raw_movie_ids
+            if self.dataset.get_embedding(mid, 'txt', return_zero_if_missing=False) is not None and
+               self.dataset.get_embedding(mid, 'img', return_zero_if_missing=False) is not None and
+               self.dataset.get_embedding(mid, 'vdo', return_zero_if_missing=False) is not None and
+               self.dataset.get_embedding(mid, 'ado', return_zero_if_missing=False) is not None
+        ]
+        return movie_ids
+    
     def __len__(self):
         return len(self.movie_ids)
     
     def __getitem__(self, idx):
         movie_id = self.movie_ids[idx]
-        # 使用延迟加载方法获取 embeddings
+        # print(idx, movie_id)
         return {
             'txt': self.dataset.get_embedding(movie_id, 'txt'),
             'img': self.dataset.get_embedding(movie_id, 'img'),
@@ -79,32 +61,20 @@ class ModalityAdaptorDataLoader:
         )
         for batch in dataloader:
             yield batch
+    
+    def __len__(self):
+        return (len(self.adaptor_dataset) + self.batch_size - 1) // self.batch_size
         
 
 def pretrain_modality_adaptor(
     config,
     dataset, 
     device: torch.device, 
-    num_epochs: int = 3,
-    batch_size: int = 16,
-    learning_rate: float = 1e-4
+    num_epochs: int = 10,
+    batch_size: int = 32,
+    learning_rate: float = 3e-4
 ):
     global current_epoch, current_batch
-    
-    # 添加文件日志
-    log_file = os.path.join(os.getcwd(), "pretrain_crash_debug.log")
-    file_handler_id = logger.add(log_file, level="DEBUG", mode="w")
-    logger.info(f"=== Training session started ===")
-    logger.info(f"Debug log: {log_file}")
-    logger.info(f"PyTorch: {torch.__version__}")
-    
-    # 固定随机种子
-    import random, numpy as np
-    seed = 42
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    logger.info(f"Seed: {seed}")
     
     logger.info("Initializing ModalityAdaptor model...")
     model = ModalityAdaptor(config).to(device)
@@ -116,58 +86,50 @@ def pretrain_modality_adaptor(
     logger.info(f"Starting ModalityAdaptor pre-training...")
     logger.info(f"Total samples: {len(adaptor_dataset)}, Batch size: {batch_size}")
     logger.info(f"Device: {device}")
-    
-    try:
-        for epoch in range(num_epochs):
-            current_epoch = epoch + 1
-            current_batch = 0
-            logger.info(f"="*50)
-            logger.info(f"Epoch {current_epoch}/{num_epochs}")
-            logger.info(f"="*50)
-            
-            for batch_idx, batch in enumerate(tqdm(dataloader, desc=f"Epoch {current_epoch}/{num_epochs}")):
-                current_batch = batch_idx + 1
-                
-                if current_batch % 50 == 0:
-                    logger.info(f"E{current_epoch} B{current_batch}: Processing...")
-                    sys.stdout.flush()
-                
-                try:
-                    projected_emb, alignment_loss = model(
-                        batch,
-                        return_alignment_loss=True,
-                        device=device
-                    )
-                    
-                    if torch.isnan(alignment_loss) or torch.isinf(alignment_loss):
-                        logger.error(f"Invalid loss at E{current_epoch} B{current_batch}")
-                        continue
-                    
-                    alignment_loss.backward()
-                    optimizer.step()
-                    optimizer.zero_grad()
-                    
-                except Exception as e:
-                    logger.error(f"Error at E{current_epoch} B{current_batch}: {type(e).__name__}: {e}")
-                    logger.error(traceback.format_exc())
-                    raise
 
-            logger.info(f"Epoch {current_epoch} completed, Loss: {alignment_loss.item():.4f}")
-        
-        logger.info("="*50)
-        logger.info("Training completed successfully!")
-        logger.info("="*50)
-        torch.save(model.state_dict(), config['mm_proj_weight_path'])
-        logger.info(f"Model saved to {config['mm_proj_weight_path']}")
-        
-    except KeyboardInterrupt:
-        logger.warning(f"Interrupted at E{current_epoch} B{current_batch}")
-        raise
-    except Exception as e:
-        logger.critical(f"FATAL at E{current_epoch} B{current_batch}")
-        logger.critical(f"{type(e).__name__}: {e}")
-        logger.critical(traceback.format_exc())
-        raise
-    finally:
-        logger.remove(file_handler_id)
-        logger.info(f"Log saved: {log_file}")
+    # logger.info(f"Check dataset sample modalities:")
+    # sample = adaptor_dataset[0]
+    # for modality in ['txt', 'img', 'vdo', 'ado']:
+    #     logger.info(f"  {modality} : {sample[modality]}")
+
+    
+    for epoch in range(num_epochs):
+        current_epoch = epoch + 1
+        current_batch = 0
+        logger.info(f"="*50)
+        logger.info(f"Epoch {current_epoch}/{num_epochs}")
+        logger.info(f"="*50)
+        epoch_loss = 0.0
+
+        for batch in tqdm(dataloader, desc=f"Epoch {current_epoch}/{num_epochs}"):
+            projected_emb, alignment_loss = model(
+                batch,
+                return_alignment_loss=True,
+                device=device
+            )
+            
+            if torch.isnan(alignment_loss) or torch.isinf(alignment_loss):
+                logger.error(f"Invalid loss at E{current_epoch} B{current_batch}")
+                continue
+            epoch_loss += alignment_loss.item()
+            alignment_loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+            
+            if current_batch % 50 == 0:
+                logger.info(f"E{current_epoch} B{current_batch}: Loss: {alignment_loss.item():.4f}")
+            current_batch += 1
+
+        logger.info(f"Epoch {current_epoch} completed, Loss: {epoch_loss/len(dataloader):.4f}")
+    
+    logger.info("="*50)
+    logger.info("Training completed successfully!")
+    logger.info("="*50)
+    # torch.save(model.state_dict(), config['mm_proj_weight_path'])
+    torch.save({
+        'txt_proj': model.txt_proj.state_dict(),
+        'img_proj': model.img_proj.state_dict(),
+        'vdo_proj': model.vdo_proj.state_dict(),
+        'ado_proj': model.ado_proj.state_dict()
+    }, os.path.join(PRETRAIN_PATH, 'modality_adaptor_proj_weights.pth'))
+    logger.info(f"Model saved to {os.path.join(PRETRAIN_PATH, 'modality_adaptor_proj_weights.pth')}")

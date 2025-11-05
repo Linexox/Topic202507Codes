@@ -6,6 +6,7 @@ import torch
 
 def pretrain_step_1(config):
     dataset = get_dataset(config, config['tokenize'], restore=False, save=False)
-    
+    # print(dataset)
+    # logger.info("")
     pretrain_modality_adaptor(config, dataset, device='cuda' if torch.cuda.is_available() else 'cpu')
     

@@ -46,6 +46,7 @@ class HollaRecDataLoader(BaseDataLoader):
                     augment_conv = {
                         "context_tokens": copy(conv["context_tokens"]),
                         "context_movies": copy(conv["context_movies"]),
+                        "related_movies": copy(conv["related_movies"]),
                         "response": copy(conv["response"]),
                         "movie": movie,
                         "role": conv["role"],
@@ -57,21 +58,21 @@ class HollaRecDataLoader(BaseDataLoader):
         return augment_dataset
 
     def rec_batchify(self, batch):
-        """
-        推荐任务批处理
-        """
         batch_context_tokens = []
         batch_context_movies = []
         batch_movie = []
+        batch_related_movies = []
 
         for conv in batch:
             batch_context_tokens.append(conv["context_tokens"])
             batch_context_movies.append(conv["context_movies"])
+            batch_related_movies.append(conv["related_movies"])
             batch_movie.append(conv["movie"])
-
+        
         res = {
             "context_tokens": batch_context_tokens,
             "context_movies": batch_context_movies,
+            "related_movies": batch_related_movies,
             "movie": torch.tensor(batch_movie, dtype=torch.long),
         }
 
@@ -99,6 +100,7 @@ class HollaRecDataLoader(BaseDataLoader):
         """
         batch_context_tokens = []
         batch_context_movies = []
+        batch_related_movies = []
         batch_response = []
         batch_user_id = []
         batch_conv_id = []
@@ -124,6 +126,7 @@ class HollaRecDataLoader(BaseDataLoader):
             batch_response.append(response)
 
             batch_context_movies.append(conv["context_movies"])
+            batch_related_movies.append(conv["related_movies"])
             batch_user_id.append(conv["user_id"])
             batch_conv_id.append(conv["conv_id"])
 
@@ -133,6 +136,7 @@ class HollaRecDataLoader(BaseDataLoader):
                 batch_context_tokens, self.pad_token_idx, pad_tail=False
             ),
             "context_movies": batch_context_movies,
+            "related_movies": batch_related_movies,
             "response": padded_tensor(
                 batch_response, self.pad_token_idx, pad_tail=True
             ),

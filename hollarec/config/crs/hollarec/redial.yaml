@@ -16,5 +16,5 @@ scale: 1
 # model
 model: HollaRec
 load_mm_proj_weights: false
-mm_proj_weight_path : 'hollarec/pretrain/mm_proj_weight.pth'
+mm_proj_weight_path : 'D:\.Workspace\Topic202507Codes\hollarec\pretrain'
 # optim

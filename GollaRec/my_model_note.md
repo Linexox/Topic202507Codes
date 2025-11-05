@@ -15,12 +15,13 @@
     ◦ 图像：用CLIP提取视觉特征，聚类生成视觉超边（例如：户外场景关联的帐篷、登山杖）。  
 
     ◦ 视频：拆解为关键帧+音频，分别生成视觉/音频超边后融合。
+  $$
   \mathcal{E}_{\text{hyper}}^{\text{(video)}} = \text{Cluster}(\text{CLIP}_{\text{frame}} \oplus \text{MFCC}_{\text{audio}})
-  
+  $$
 
 • 超图结构：  
 
-  定义四类超图：\mathcal{G}_{\text{text}}, \mathcal{G}_{\text{audio}}, \mathcal{G}_{\text{image}}, \mathcal{G}_{\text{video}}，节点均为物品i \in I，超边覆盖多模态关系。
+  定义四类超图：$\mathcal{G}_{\text{text}}, \mathcal{G}_{\text{audio}}, \mathcal{G}_{\text{image}}, \mathcal{G}_{\text{video}}，$节点均为物品$i \in I$，超边覆盖多模态关系。
 
 2. 多模态GoT提示设计（Step 3）
 
@@ -39,23 +40,25 @@
   • 超图指令微调：训练LLM区分超边类型（如<hyper_edge type="text"> vs <hyper_edge type="image">）。  
 
   • 跨模态对齐损失：扩展原text-graph alignment至多模态：
+  $$
     \mathcal{L}_{\text{align}} = \sum_{m \in \mathcal{M}} \text{sim}(z_{\text{hyper}}^{(m)}, z_{\text{LLM}}^{(m)})
-    
-    其中z_{\text{hyper}}^{(m)}为超图模态m的嵌入，z_{\text{LLM}}^{(m)}为LLM生成对应模态的表示。
+    $$
+    其中$z_{\text{hyper}}^{(m)}$为超图模态m的嵌入，$z_{\text{LLM}}^{(m)}$为LLM生成对应模态的表示。
 
 3. 图适配器升级（Step 4）
 
 • 多模态超图卷积：  
 
   替换LightGCN为多模态超图卷积网络（如https://arxiv.org/abs/1809.09401），聚合不同模态超边信息：
+  $$
   h_i^{(l+1)} = \sigma\left( \sum_{m \in \mathcal{M}} \alpha_m \cdot \sum_{e \ni i} \frac{1}{|e|} \sum_{j \in e} h_j^{(l)} \right)
-  
-  其中\alpha_m为模态权重（可学习参数），\sigma为激活函数。
+  $$
+  其中$\alpha_m$为模态权重（可学习参数），$\sigma$为激活函数。
   
 • 对话任务适配：  
 
   增加对话状态编码器，将当前对话历史H_t与用户嵌入拼接：
-  h_u^{\text{CRS}} = \text{MLP}([h_u \oplus \text{GRU}(H_t)])
+  $h_u^{\text{CRS}} = \text{MLP}([h_u \oplus \text{GRU}(H_t)])$
   
   实现推荐与对话的联合优化（如图1）。
 
@@ -66,25 +69,27 @@
 1. 多模态超图融合机制
 
 • 动态超边权重：通过注意力机制计算模态重要性：
-  \alpha_m = \frac{\exp(w_m \cdot h_u)}{\sum_{m' \in \mathcal{M}} \exp(w_{m'} \cdot h_u)}
+$$
+  \alpha_m = \frac{\exp(w_m \cdot h_u)}{\sum_{m' \in \mathcal{M}} \exp(w_{m'} \cdot h_u)}$$
   
   使模型能动态侧重不同模态（例如：对话中强调文本，视频推荐侧重视觉）。
 
 2. 轻量化超图提示压缩
 
-• 超边摘要生成：用LLM压缩复杂超边为语义摘要（如“用户群组偏好户外运动”），解决token长度限制：
-  hyper_edge_summary = LLM.generate("Summarize hyper-edge: {item1, item2, item3} → ")
-  
+• 超边摘要生成：用LLM压缩复杂超边为语义摘要（如“用户群组偏好户外运动”），解决token长度限制
+$$
+  \text{HyperEdgeSummary} = \text{LLM.generate("Summarize hyper-edge: {item1, item2, item3} → ")}
+$$
 
 3. 对话-推荐联合学习
 
 • 损失函数设计：
 
-  • 推荐任务： \mathcal{L}_{\text{rec}} = \text{BPR}(h_u, h_i^+, h_i^-) 
+  • 推荐任务： $\mathcal{L}_{\text{rec}} = \text{BPR}(h_u, h_i^+, h_i^-) $
 
-  • 对话任务： \mathcal{L}_{\text{conv}} = \text{CrossEntropy}(\text{LLM}(H_t), y_{\text{response}}) 
+  • 对话任务： $\mathcal{L}_{\text{conv}} = \text{CrossEntropy}(\text{LLM}(H_t), y_{\text{response}}) $
 
-  • 联合优化： \mathcal{L} = \lambda \mathcal{L}_{\text{rec}} + (1-\lambda) \mathcal{L}_{\text{conv}} 
+  • 联合优化： $\mathcal{L} = \lambda \mathcal{L}_{\text{rec}} + (1-\lambda) \mathcal{L}_{\text{conv}} $
 
 三、实验设计建议
 
@@ -113,14 +118,14 @@ LLM推荐 P5, TALLRec 分析GoT提示改进点
   • 整体效果：Human Evaluation（用户满意度）
 
 3. 消融实验设计
-
+```mermaid
 graph TD
   A[完整模型] --> B[-多模态超图]
   A --> C[-GoT提示]
   A --> D[-图适配器]
   A --> E[-对话联合训练]
   对比A/B/C/D/E在CRS任务上的性能下降幅度
-
+```
 
 四、潜在挑战与解决方案
 
@@ -135,7 +140,7 @@ graph TD
 
 3. 对话-推荐冲突  
    解法：增加一致性损失项：
-   \mathcal{L}_{\text{consist}} = \| \text{LLM}_{\text{dialogue}}(H_t) - \text{LLM}_{\text{GoT}}(h_u) \|^2
+   $\mathcal{L}_{\text{consist}} = \| \text{LLM}_{\text{dialogue}}(H_t) - \text{LLM}_{\text{GoT}}(h_u) \|^2$
    
 
 五、可视化验证

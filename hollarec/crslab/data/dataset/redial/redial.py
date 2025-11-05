@@ -6,6 +6,7 @@ from copy import copy
 from typing import Dict, List, Optional
 
 import torch
+from torch.nn.functional import cosine_similarity
 from transformers import AutoTokenizer
 from loguru import logger
 from tqdm import tqdm
@@ -135,9 +136,12 @@ class ReDialDataset(BaseDataset):
             logger.error(f"Dataset path {self.dpath} does not exist.")
             raise FileNotFoundError(f"Dataset path {self.dpath} does not exist.")
         with open(os.path.join(self.dpath, "movie2ind.json"), "r", encoding="utf-8") as f:
-            self.movie2ind = json.load(f)
+            self.movie2ind = json.load(f) # movie2ind: {movie_name: movie_id}: {"The Godfather": "123", ...}
             self.ind2movie = {
-                int(movie_id): movie_name for movie_name, movie_id in self.movie2ind.items()
+                str(movie_id): movie_name for movie_name, movie_id in self.movie2ind.items()
+            }
+            self.movie2ind = {
+                movie_name: str(movie_id) for movie_name, movie_id in self.movie2ind.items()
             }
             logger.info(f"[dataset.redial] Loaded movie vocabulary: {len(self.movie2ind)} movies.")
         
@@ -157,6 +161,9 @@ class ReDialDataset(BaseDataset):
                 
             logger.info("[dataset.redial] Initialized lazy loading for multi-modal embeddings.")
             logger.info(f"[dataset.redial] Total movies: {len(self.movie2ind)}")
+
+            self._precompute_similarity()
+
         else:
             logger.error("Loading embeddings on-the-fly is not implemented yet.")
             raise NotImplementedError("Loading embeddings on-the-fly is not implemented yet.")
@@ -164,60 +171,70 @@ class ReDialDataset(BaseDataset):
     def _load_embeddings(self):
         print(os.listdir(os.path.join(self.dpath, "embeddings")))
         self.embeddings = {}
-        
-        # 优化：移除不必要的 with 上下文（torch.load 会自动关闭）
-        self.embeddings['txt'] = torch.load(
-            os.path.join(self.dpath, "embeddings", "txt_embeddings.pt"),
-            map_location='cpu'  # 明确指定加载到 CPU，避免意外的设备转换
-        )
+        self.embeddings['txt'] = torch.load(os.path.join(self.dpath, "embeddings", "txt_embeddings.pt"), map_location='cpu')
         logger.info("[dataset.redial] txt embeddings loaded from files.")
-    
-        self.embeddings['img'] = torch.load(
-            os.path.join(self.dpath, "embeddings", "img_embeddings.pt"),
-            map_location='cpu'
-        )
+        self.embeddings['img'] = torch.load(os.path.join(self.dpath, "embeddings", "img_embeddings.pt"), map_location='cpu')
         logger.info("[dataset.redial] img embeddings loaded from files.")
-        
-        self.embeddings['vdo'] = torch.load(
-            os.path.join(self.dpath, "embeddings", "vdo_embeddings.pt"),
-            map_location='cpu'
-        )
+        self.embeddings['vdo'] = torch.load(os.path.join(self.dpath, "embeddings", "vdo_embeddings.pt"), map_location='cpu')
         logger.info("[dataset.redial] vdo embeddings loaded from files.")
-        
-        self.embeddings['ado'] = torch.load(
-            os.path.join(self.dpath, "embeddings", "ado_embeddings.pt"),
-            map_location='cpu'
-        )
+        self.embeddings['ado'] = torch.load(os.path.join(self.dpath, "embeddings", "ado_embeddings.pt"), map_location='cpu')
         logger.info("[dataset.redial] ado embeddings loaded from files.")
-        logger.info("[dataset.redial] All multi-modal embeddings loaded from files.")
         
-        # 优化：预创建零向量，避免每次动态创建
         self.zero_embeddings = {
             'txt': torch.zeros(self.txt_dim),
             'img': torch.zeros(self.img_dim),
             'vdo': torch.zeros(self.vdo_dim),
             'ado': torch.zeros(self.ado_dim)
         }
-    
-    def get_embedding(self, movie_id, modality='txt'):
-        assert modality in ['txt', 'img', 'vdo', 'ado'], "Modality must be one of 'txt', 'img', 'vdo', 'ado'."
-        if movie_id in self.embeddings[modality]:
-            # 优化：直接返回，detach() 是多余的（加载的 embeddings 默认不需要梯度）
-            # 并且在 forward 中已经有 .to(device) 会创建副本，这里不需要额外操作
-            return self.embeddings[modality][movie_id]
-        else:
-            # 优化：使用预创建的零向量，避免每次创建新 tensor
-            return self.zero_embeddings[modality]
 
-    def _get_zero_embedding(self, modality):
-        # 已废弃：改用预创建的 self.zero_embeddings
-        dims = {
-            'txt': self.txt_dim,
-            'img': self.img_dim,
-            'vdo': self.vdo_dim,
-            'ado': self.ado_dim
+
+    def get_embedding(self, movie_id , modality:str='txt', return_zero_if_missing:bool=True):
+        assert modality in ['txt', 'img', 'vdo', 'ado'], "Modality must be one of 'txt', 'img', 'vdo', 'ado'."
+        if isinstance(movie_id, int):
+            movie_id = str(movie_id)
+        
+        if movie_id in self.embeddings[modality]:
+            return self.embeddings[modality][movie_id]
+        elif return_zero_if_missing:
+            return self.zero_embeddings[modality]
+        else:
+            return None
+    
+
+    def _precompute_similarity(self):
+        """
+        self.similarity_matrices: {
+            'txt': { '<movie_id>': [(<similar_movie_id_1>, <similarity_score_1>), ...], ... },
+            'img': { '<movie_id>': [(<similar_movie_id_1>, <similarity_score_1>), ...], ... },
+            'vdo': { '<movie_id>': [(<similar_movie_id_1>, <similarity_score_1>), ...], ... },
+            'ado': { '<movie_id>': [(<similar_movie_id_1>, <similarity_score_1>), ...], ... },
         }
-        return torch.zeros(dims[modality])
+        """
+        restore_similarity_topk = self.opt.get("restore_similarity_topk", 50)
+        self.similarity_matrices = {}
+        for modality in ['txt', 'img', 'vdo', 'ado']:
+            all_embs = []
+            movie_ids = []
+            for movie_id in self.movie2ind.values():
+                emb = self.get_embedding(movie_id, modality, return_zero_if_missing=True)
+                all_embs.append(emb.unsqueeze(0))  # 添加一个维度以便堆叠
+                movie_ids.append(movie_id)
+            all_embs_tensor = torch.cat(all_embs, dim=0) # shape: (num_movies, emb_dim)
+            all_embs_norm = torch.nn.functional.normalize(all_embs_tensor, p=2, dim=1)
+            sim_matrix = torch.mm(all_embs_norm, all_embs_norm.t()) # shape: (num_movies, num_movies)
+            for i in range(len(movie_ids)):
+                sim_matrix[i, i] = -float('inf')
+
+            modality_sim_dict = {}
+            for i, movie_id in enumerate(movie_ids):
+                k = min(restore_similarity_topk, len(movie_ids) - 1)
+                topk_values, topk_indices = torch.topk(sim_matrix[i], k, dim=0)
+                for value, index in zip(topk_values, topk_indices):
+                    similar_id = movie_ids[index.item()]
+                    if movie_id not in modality_sim_dict:
+                        modality_sim_dict[movie_id] = []
+                    modality_sim_dict[movie_id].append((similar_id, value.item()))
+            self.similarity_matrices[modality] = modality_sim_dict
 
     def _data_preprocess(self, train_data, valid_data, test_data):
         logger.info("[dataset.redial] Processing training data.")
@@ -241,22 +258,6 @@ class ReDialDataset(BaseDataset):
      
         return augmented_conv_dicts
 
-    def _get_movie_mentioned(self, text: str = None, text_token_ids: list = None):
-        if text is not None:
-            movie_mentioned_list = set()
-            for movie_name, movie_id in self.movie2ind.items():
-                if movie_name in text:
-                    movie_mentioned_list.add(movie_id)
-
-            movie_mentioned_list = list(movie_mentioned_list)
-            return movie_mentioned_list
-        elif text_token_ids is not None:
-            raise NotImplementedError("Movie mention extraction from token IDs is not implemented.")
-        else:
-            raise ValueError(
-                "Either text or text_token_ids must be provided to extract movie mentions."
-            )
-
     def _merge_conv_data(self, conv, user_id, conv_id):
         augmented_data = []
         last_role = None
@@ -264,7 +265,6 @@ class ReDialDataset(BaseDataset):
             text_token_ids = [
                 self.tok2ind.get(token, self.tok2ind["<unk>"]) for token in uttr["text"]
             ]
-            # movie_ids = self._get_movie_mentioned(text=uttr["text"])
             role = uttr["role"]
             if role == last_role:
                 augmented_data[-1]["text"] += text_token_ids
@@ -290,27 +290,66 @@ class ReDialDataset(BaseDataset):
         {[uttr1, uttr2]},
         {[uttr1, uttr2, uttr3]},
         ...
+        同时添加基于多模态相似度的超边物品（每个模态分别扩展）
         """
         augmented_conv_dicts = []
         context_tokens, context_movies = [], []
         conv_id = raw_conv_dict[0]["conv_id"]
         user_id = raw_conv_dict[0]["user_id"]
+        
+        hyperedge_modalities = ['txt', 'img', 'vdo', 'ado']  # 所有模态
+        hyperedge_top_k = self.opt.get("hyperedge_top_k", 5)  # 每个电影扩展5个相似电影
+        hyperedge_threshold = self.opt.get("hyperedge_threshold", 0.5)  # 相似度阈值
+        
         for i, turn in enumerate(raw_conv_dict):
             # role = turn['role']
             turn_tokens = turn["text"]
             turn_movies = turn["movies"]
 
             if len(context_tokens) > 0:
-                conv_dict = {
+                related_movies = {}
+                for modality in hyperedge_modalities:
+                    related_movies[modality] = self._add_related_movies(
+                        context_movies,
+                        modality=modality,
+                        top_k=hyperedge_top_k,
+                        similarity_threshold=hyperedge_threshold
+                    )
+                    assert len(related_movies[modality]) == len(context_movies), \
+                        f"Length mismatch in related movies for modality {modality} at turn {i}"
+
+                conv_dict = { # final dict
                     "role": turn["role"],
                     "movies": turn_movies,
                     "response": turn_tokens,
                     "user_id": user_id,
                     "conv_id": conv_id,
                     "context_tokens": copy(context_tokens),
-                    "context_movies": copy(context_movies),
+                    "context_movies": copy(context_movies), # shape: (N, )
+                    "related_movies": related_movies, # shape: {modality : List[List[str]]}, corresponding to context_movies
                 }
                 augmented_conv_dicts.append(conv_dict)
+            
             context_tokens.append(turn_tokens)
             context_movies += turn_movies
+            context_movies = list(set(context_movies))  # 去重
         return augmented_conv_dicts
+
+    def _add_related_movies(self, context_movies, modality='txt', top_k=10, similarity_threshold=0.5):
+        """
+        Return:
+            related_movies: List[List[str]] : context_movies中每个电影对应的模态topk相似电影列表
+        """
+        related_movies = []
+        for movie_id in context_movies:
+            cur_related = []
+            
+            movie_sim_list = self.similarity_matrices[modality].get(movie_id, [])
+            if len(movie_sim_list) != 0:
+                for similar_id, value in movie_sim_list:
+                    if value >= similarity_threshold:
+                        cur_related.append(similar_id)
+                    if len(cur_related) >= top_k:
+                        break
+            related_movies.append(cur_related)
+        return related_movies
