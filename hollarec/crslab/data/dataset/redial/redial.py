@@ -270,15 +270,13 @@ class ReDialDataset(BaseDataset):
                 augmented_data[-1]["text"] += text_token_ids
                 augmented_data[-1]["movies"] += uttr["movies"]
             else:
-                augmented_data.append(
-                    {
+                augmented_data.append({
                         "user_id": user_id,
                         "conv_id": conv_id,
                         "role": role,
                         "text": text_token_ids,
                         "movies": uttr["movies"],
-                    }
-                )
+                    })
             last_role = role
 
         return augmented_data

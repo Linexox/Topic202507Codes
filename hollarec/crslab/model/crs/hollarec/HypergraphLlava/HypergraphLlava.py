@@ -15,7 +15,7 @@ import json
 import os.path as osp
 
 DEFAULT_HYPERGRAPH_TOKEN = "<hgraph>"
-DEFAULT_HYPERGRAPH_PATCH_TOKEN = "<hg_patch>"  # Fixed typo: was "<hg_path>"
+DEFAULT_HYPERGRAPH_PATCH_TOKEN = "<hg_patch>"
 DEFAULT_HG_START_TOKEN = "<hg_start>"
 DEFAULT_HG_END_TOKEN = "<hg_end>"
 
@@ -151,6 +151,7 @@ class HypergraphLlavaModel(LlavaModel):
         graph_tower = self.get_graph_tower()
         
         # Process hypergraph data if available
+        # [2] Process hypergraph data through graph tower to get node features 
         if graph_tower is not None and (input_ids.shape[1] != 1 or self.training) and graph_data is not None:
             # TODO Forward through hypergraph tower to get node features
             with torch.no_grad():

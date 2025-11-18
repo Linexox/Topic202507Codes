@@ -11,7 +11,8 @@ from torchscale.component.embedding import (
     VisionEmbedding,
 )
 # from torchscale.component.multiway_network import MutliwayEmbedding
-from models.LLaVA.multiway_network import MutliwayEmbedding
+# from models.LLaVA.multiway_network import MutliwayEmbedding
+from models.llava.vicuna_network import MutliwayEmbedding
 
 class LLaVA(nn.Module):
     def __init__(self, args, **kwargs):

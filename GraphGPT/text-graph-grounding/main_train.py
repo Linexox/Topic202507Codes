@@ -60,9 +60,11 @@ def main(args):
         loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=10)
         for i_batch, sample_batched in tqdm(enumerate(loader), disable=False, total=len(loader)):
             s_n, t_n = sample_batched["s_n"], sample_batched["t_n"]
+            # s_n source node, t_n target/neighbour node
             s_n_arr = s_n.numpy()  # .reshape((1, -1))
             t_n_arr = t_n.numpy().reshape(-1)
             s_n_text, t_n_text = [new_dict[i] for i in s_n_arr], [new_dict[j] for j in t_n_arr]
+            # s_n_text, t_n_text: list of texts
             s_n_text, t_n_text = tokenize(s_n_text, context_length=args.context_length).to(device), tokenize(
                 t_n_text, context_length=args.context_length
             ).to(device)
@@ -71,6 +73,10 @@ def main(args):
             s_image_features, s_text_features, t_text_features, labels = model(
                 in_g, s_n, t_n, s_n_text, t_n_text, device
             )
+            # s_image_features: source node image features
+            # s_text_features: source node text features
+            # t_text_features: target/neighbour node text features
+            # labels: correct matching labels
 
             node_loss = cal_cl_loss(s_image_features, s_text_features, labels)
             gt_loss = cal_cl_loss(s_image_features, t_text_features, labels)

@@ -6,7 +6,7 @@ from torch_geometric.data import Data
 
 from transformers.configuration_utils import PretrainedConfig
 
-def hgnn_conv(x, hyperedge_index, hyperedge_weight=None):
+def hgnn_conv(x, hyperedge_index, hyperedge_weight=None, num_nodes=None):
     """
     Args:
         x (torch.Tensor): 
@@ -27,10 +27,9 @@ def hgnn_conv(x, hyperedge_index, hyperedge_weight=None):
     
     if num_nodes is None:
         num_nodes = x.size(0)
-    num_hyperedges = hyperedge_idx.max().item() + 1
     
-
     node_idx, hyperedge_idx = hyperedge_index
+    num_hyperedges = hyperedge_idx.max().item() + 1
 
     d_v = degree(index=node_idx, num_nodes=num_nodes)
     d_v_inv_sqrt = d_v.pow(-0.5)

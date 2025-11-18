@@ -1,5 +1,5 @@
 # from .HypergraphLlava4Recsys import ModalityAdaptor
-from .HypergraphLlava4Recsys import ModalityAdaptor
+from .MMHypergraphLlava import ModalityAdaptor
 
 import os
 import torch

@@ -75,6 +75,9 @@ class Transformer(nn.Module):
         return self.resblocks(x)
 
 class CLIP(nn.Module):
+    """
+    Contrastive Language-Image Pre-training (CLIP) model adapted for graph and text modalities.
+    """
     def __init__(self, args):
         super().__init__()
 

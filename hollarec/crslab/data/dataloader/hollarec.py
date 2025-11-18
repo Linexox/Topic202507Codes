@@ -46,7 +46,7 @@ class HollaRecDataLoader(BaseDataLoader):
                     augment_conv = {
                         "context_tokens": copy(conv["context_tokens"]),
                         "context_movies": copy(conv["context_movies"]),
-                        "related_movies": copy(conv["related_movies"]),
+                        "related_movies": copy(conv["related_movies"]), # structure: {modality: List[List[(movie_id:str, score:float)]]}
                         "response": copy(conv["response"]),
                         "movie": movie,
                         "role": conv["role"],

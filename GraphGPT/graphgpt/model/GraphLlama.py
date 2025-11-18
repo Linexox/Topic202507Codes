@@ -63,9 +63,8 @@ def load_model_pretrained(model_name, pretrain_model_path):
         state_dict.pop('logit_scale')
     print('loading graph pre train model')
     model.load_state_dict(state_dict)
-
-
     return model, args
+
 def transfer_param_tograph(clip_graph, gnn):
     
     print(clip_graph)
@@ -219,7 +218,9 @@ class GraphLlamaModel(LlamaModel):
                 #     graph_node_features = [{'graph_1': self.graph_projector(node_feature['graph_1']), 'graph_2': self.graph_projector(node_feature['graph_2'])} for node_feature in graph_node_features]
             else:
                 raise ValueError(f'graph_node_reps is expected to be a list but got {type(graph_data)}')
-            dummy_graph_features = torch.zeros(256, 128, device=inputs_embeds.device, dtype=inputs_embeds.dtype)
+            
+
+            dummy_graph_features = torch.zeros(256, 128,  device=inputs_embeds.device, dtype=inputs_embeds.dtype)
             dummy_graph_features = self.graph_projector(dummy_graph_features) # 图占位符的嵌入
 
             new_input_embeds = []
@@ -227,7 +228,7 @@ class GraphLlamaModel(LlamaModel):
             for cur_input_ids, cur_input_embeds in zip(input_ids, inputs_embeds):
                 if (cur_input_ids == graph_tower.config.graph_patch_token).sum() == 0: # 若没有图占位符graph_patch_token
                     # multimodal LLM, but the current sample is not multimodal
-                    cur_input_embeds = cur_input_embeds + (0. * dummy_graph_features).sum() # 保持梯度流通？？
+                    cur_input_embeds = cur_input_embeds + (0. * dummy_graph_features).sum()
                     new_input_embeds.append(cur_input_embeds) # 直接使用文本嵌入
                     cur_graph_idx += 1
                     continue

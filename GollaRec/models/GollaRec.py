@@ -26,15 +26,15 @@ class GollaRec(MultiModalEndtoEndRecommender):
         self.embedding_item = torch.nn.Embedding(num_embeddings=self.num_items, embedding_dim=self.latent_dim)
         self.initializer(self.embedding_user.weight)
         self.initializer(self.embedding_item.weight)
-        self.ui_interaction = dataset.inter_matrix(form='csr').astype(np.float32)
+        self.ui_interaction = dataset.inter_matrix(form='csr').astype(np.float32) ## 用户-物品交互矩阵
         self.__init_mm_feature(dataset)
 
-        if pretrained_path and use_soup:
-            self.load_soup(pretrained_path)
+        # if pretrained_path and use_soup:
+        #     self.load_soup(pretrained_path)
 
-    def load_soup(self, paths):
-        self = uniform_soup(self, paths, device=self.device) 
-    #         self.device = torch.device('cpu')
+    # def load_soup(self, paths):
+    #     self = uniform_soup(self, paths, device=self.device) 
+    # #         self.device = torch.device('cpu')
 
     def __init_mm_feature(self, dataset):
         # for VLMO patch embedding, convert to [item_num, 768/544]
@@ -99,7 +99,7 @@ class GollaRec(MultiModalEndtoEndRecommender):
         if self.v_feat is not None: # 如果有视觉特征
             self.v_dense_emb = self.v_dense(self.v_feat)  # v=>id # 视觉特征映射到潜在空间
         # 使用SGC编码器分别对协同过滤特征和视觉特征进行编码，使用归一化邻接矩阵
-        self.i_emb_u, self.i_emb_i = self.sgl_encoder(users_emb, items_emb) # 协同过滤特征编码
+        self.i_emb_u, self.i_emb_i = self.sgl_encoder(users_emb, items_emb) # 协同过滤特征编码 # perturbed_adj=None，使用原始图
         self.v_emb_u, self.v_emb_i = self.sgl_encoder(users_emb, self.v_dense_emb) # 视觉特征编码
 
         # 融合不同模态的嵌入表示
