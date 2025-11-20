@@ -53,9 +53,9 @@ class ReDialDataset(BaseDataset):
             self.tokenizer = tokenizer
             logger.info("[dataset.redial] Using provided tokenizer with special tokens.")
         else:
-            logger.info(
-                f"[dataset.redial] Loading tokenizer from {os.path.join(self.dpath, 'tokenizer')}."
-            )
+            logger.info(f"[dataset.redial] Loading tokenizer from {os.path.join(self.dpath, 'tokenizer')}.")
+            assert os.path.exists(os.path.join(self.dpath, "tokenizer")), \
+                f"Tokenizer path {os.path.join(self.dpath, 'tokenizer')} does not exist."
             self.tokenizer = AutoTokenizer.from_pretrained(
                 os.path.join(self.dpath, "tokenizer"),
             )
@@ -98,7 +98,7 @@ class ReDialDataset(BaseDataset):
             "ind2movie": self.ind2movie,
             "movie2ind": self.movie2ind,
             "vocab_size": len(self.tok2ind),
-            "n_movies": len(self.movie2ind),
+            "n_movies": len(self.ind2movie),
         }
         return train_data, valid_data, test_data, vocab
 
@@ -137,13 +137,11 @@ class ReDialDataset(BaseDataset):
             raise FileNotFoundError(f"Dataset path {self.dpath} does not exist.")
         with open(os.path.join(self.dpath, "movie2ind.json"), "r", encoding="utf-8") as f:
             self.movie2ind = json.load(f) # movie2ind: {movie_name: movie_id}: {"The Godfather": "123", ...}
-            self.ind2movie = {
-                str(movie_id): movie_name for movie_name, movie_id in self.movie2ind.items()
-            }
-            self.movie2ind = {
-                movie_name: str(movie_id) for movie_name, movie_id in self.movie2ind.items()
-            }
-            logger.info(f"[dataset.redial] Loaded movie vocabulary: {len(self.movie2ind)} movies.")
+            self.movie2ind = { movie_name: int(movie_id) for movie_name, movie_id in self.movie2ind.items() }
+        with open(os.path.join(self.dpath, "ind2movie.json"), "r", encoding="utf-8") as f:
+            self.ind2movie = json.load(f)
+            self.ind2movie = {int(movie_id): movie_name for movie_id, movie_name in self.ind2movie.items()}
+        logger.info(f"[dataset.redial] Loaded movie vocabulary: {len(self.movie2ind)} movies.")
         
         if self.opt.get("load_saved_embeddings", False):
             self.txt_dim = self.opt.get("txt_dim", 0)
@@ -161,6 +159,7 @@ class ReDialDataset(BaseDataset):
                 
             logger.info("[dataset.redial] Initialized lazy loading for multi-modal embeddings.")
             logger.info(f"[dataset.redial] Total movies: {len(self.movie2ind)}")
+            logger.info(f"[dataset.redial] Total movie_ids : {len(self.ind2movie)}")
 
             self._precompute_similarity()
 
@@ -180,6 +179,13 @@ class ReDialDataset(BaseDataset):
         self.embeddings['ado'] = torch.load(os.path.join(self.dpath, "embeddings", "ado_embeddings.pt"), map_location='cpu')
         logger.info("[dataset.redial] ado embeddings loaded from files.")
         
+        for modality in ['txt', 'img', 'vdo', 'ado']:
+            converted = {}
+            for key, value in self.embeddings[modality].items():
+                int_key = int(key)
+                converted[int_key] = value.float()
+            self.embeddings[modality] = converted
+
         self.zero_embeddings = {
             'txt': torch.zeros(self.txt_dim),
             'img': torch.zeros(self.img_dim),
@@ -190,12 +196,15 @@ class ReDialDataset(BaseDataset):
 
     def get_embedding(self, movie_id , modality:str='txt', return_zero_if_missing:bool=True):
         assert modality in ['txt', 'img', 'vdo', 'ado'], "Modality must be one of 'txt', 'img', 'vdo', 'ado'."
-        if isinstance(movie_id, int):
-            movie_id = str(movie_id)
+        if isinstance(movie_id, str):
+            movie_id = int(movie_id)
         
         if movie_id in self.embeddings[modality]:
             return self.embeddings[modality][movie_id]
-        elif return_zero_if_missing:
+        else:
+            # logger.warning(f"[dataset.redial] Movie ID {movie_id} not found in {modality} embeddings.")
+            pass
+        if return_zero_if_missing:
             return self.zero_embeddings[modality]
         else:
             return None
@@ -216,7 +225,7 @@ class ReDialDataset(BaseDataset):
             all_embs = []
             movie_ids = []
             for movie_id in self.movie2ind.values():
-                emb = self.get_embedding(movie_id, modality, return_zero_if_missing=True)
+                emb = self.get_embedding(movie_id, modality, return_zero_if_missing=True) # ！！！这里使用零向量填充缺失值，后续可考虑使用其他模态交集
                 all_embs.append(emb.unsqueeze(0))  # 添加一个维度以便堆叠
                 movie_ids.append(movie_id)
             all_embs_tensor = torch.cat(all_embs, dim=0) # shape: (num_movies, emb_dim)
@@ -235,7 +244,10 @@ class ReDialDataset(BaseDataset):
                         modality_sim_dict[movie_id] = []
                     modality_sim_dict[movie_id].append((similar_id, value.item()))
             self.similarity_matrices[modality] = modality_sim_dict
+        logger.info("[dataset.redial] Precomputed similarity matrices for all modalities.")
+        # print({modality: self.similarity_matrices[modality] for modality in self.similarity_matrices})
 
+    
     def _data_preprocess(self, train_data, valid_data, test_data):
         logger.info("[dataset.redial] Processing training data.")
         processed_train_data = self._raw_data_process(train_data)
@@ -297,7 +309,7 @@ class ReDialDataset(BaseDataset):
         
         hyperedge_modalities = ['txt', 'img', 'vdo', 'ado']  # 所有模态
         hyperedge_top_k = self.opt.get("hyperedge_top_k", 5)  # 每个电影扩展5个相似电影
-        hyperedge_threshold = self.opt.get("hyperedge_threshold", 0.5)  # 相似度阈值
+        hyperedge_threshold = self.opt.get("hyperedge_threshold", 0.0)  # 相似度阈值
         
         for i, turn in enumerate(raw_conv_dict):
             # role = turn['role']
@@ -324,7 +336,7 @@ class ReDialDataset(BaseDataset):
                     "conv_id": conv_id,
                     "context_tokens": copy(context_tokens),
                     "context_movies": copy(context_movies), # shape: (N, )
-                    "related_movies": related_movies, # shape: {modality : List[List[str]]}, corresponding to context_movies
+                    "related_movies": copy(related_movies), # shape: {modality : List[List[str]]}, corresponding to context_movies
                 }
                 augmented_conv_dicts.append(conv_dict)
             
@@ -333,21 +345,29 @@ class ReDialDataset(BaseDataset):
             context_movies = list(set(context_movies))  # 去重
         return augmented_conv_dicts
 
-    def _add_related_movies(self, context_movies, modality='txt', top_k=10, similarity_threshold=0.5):
+    def _add_related_movies(self, context_movies, modality='txt', top_k=10, similarity_threshold=0.0):
         """
+        得到context_movies中每个电影对应的模态topk相似电影列表
         Return:
-            related_movies: List[List[str]] : context_movies中每个电影对应的模态topk相似电影列表
+            related_movies: List[List[str]]
         """
         related_movies = []
         for movie_id in context_movies:
             cur_related = []
-            
             movie_sim_list = self.similarity_matrices[modality].get(movie_id, [])
+            # print(f"Movie ID: {movie_id}, Similar Movies: {movie_sim_list}")
+            # logger.info(f"Movie ID: {movie_id}, Similar Movies: {movie_sim_list}") #############################
+            # movie_sim_list = sorted(movie_sim_list, key=lambda x: x[1], reverse=True)
             if len(movie_sim_list) != 0:
                 for similar_id, value in movie_sim_list:
                     if value >= similarity_threshold:
                         cur_related.append(similar_id)
                     if len(cur_related) >= top_k:
                         break
+            if len(cur_related) == 0:
+                pass
             related_movies.append(cur_related)
+            # exit()
+        # if len(context_movies) != 0:###############################
+        #     exit()
         return related_movies

@@ -168,7 +168,7 @@ class CLIP(nn.Module):
         # x.shape = [batch_size, n_ctx, transformer.width]
         # take features from the eot （end of token） embedding (eot_token is the highest number in each sequence)
         # so there is node need to shorten the context length
-        x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)]  #
+        x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)]  
         x = x @ self.text_projection
         return x
 

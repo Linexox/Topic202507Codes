@@ -11,7 +11,7 @@ from torch_geometric.nn import RGCNConv, HypergraphConv
 
 from crslab.config import DATASET_PATH
 from crslab.model.base import BaseModel
-from .HypergraphLlava import HypergraphLlavaConfig, HypergraphLlavaModel, HypergraphLlava4Recsys
+from .HypergraphLlava import HypergraphLlavaConfig, HypergraphLlavaModel
 # from crslab.model.crs.hollarec.hypergraph_llava import HypergraphLlavaCRS
 # from crslab.model.utils.modules.attention import
 

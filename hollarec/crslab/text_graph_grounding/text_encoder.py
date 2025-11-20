@@ -1,4 +1,4 @@
-
+from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -22,11 +22,11 @@ class ResidualAttentionBlock(nn.Module):
         self.attn = nn.MultiheadAttention(d_model, n_head)
         self.ln_1 = LayerNorm(d_model)
         self.mlp = nn.Sequential(
-           [
-            ("c_fc", nn.Linear(d_model, d_model * 4)),
-            ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(d_model * 4, d_model))
-           ]
+            OrderedDict([
+                ("c_fc", nn.Linear(d_model, d_model * 4)),
+                ("gelu", QuickGELU()),
+                ("c_proj", nn.Linear(d_model * 4, d_model))
+            ])
         )
         self.ln_2 = LayerNorm(d_model)
         self.attn_mask = attn_mask

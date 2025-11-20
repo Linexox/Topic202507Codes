@@ -14,34 +14,35 @@
 import torch
 from loguru import logger
 
-from .conversation import *
+# from .conversation import *
 from .crs import *
-from .policy import *
-from .recommendation import *
+# from .policy import *
+# from .recommendation import *
 
 Model_register_table = {
-    'KGSF': KGSFModel,
-    'KBRD': KBRDModel,
-    'TGRec': TGRecModel,
-    'TGConv': TGConvModel,
-    'TGPolicy': TGPolicyModel,
-    'ReDialRec': ReDialRecModel,
-    'ReDialConv': ReDialConvModel,
-    'InspiredRec': InspiredRecModel,
-    'InspiredConv': InspiredConvModel,
-    'GPT2': GPT2Model,
-    'Transformer': TransformerModel,
-    'ConvBERT': ConvBERTModel,
-    'ProfileBERT': ProfileBERTModel,
-    'TopicBERT': TopicBERTModel,
-    'PMI': PMIModel,
-    'MGCG': MGCGModel,
-    'BERT': BERTModel,
-    'SASREC': SASRECModel,
-    'GRU4REC': GRU4RECModel,
-    'Popularity': PopularityModel,
-    'TextCNN': TextCNNModel,
-    'NTRD': NTRDModel
+    # 'KGSF': KGSFModel,
+    # 'KBRD': KBRDModel,
+    # 'TGRec': TGRecModel,
+    # 'TGConv': TGConvModel,
+    # 'TGPolicy': TGPolicyModel,
+    # 'ReDialRec': ReDialRecModel,
+    # 'ReDialConv': ReDialConvModel,
+    # 'InspiredRec': InspiredRecModel,
+    # 'InspiredConv': InspiredConvModel,
+    # 'GPT2': GPT2Model,
+    # 'Transformer': TransformerModel,
+    # 'ConvBERT': ConvBERTModel,
+    # 'ProfileBERT': ProfileBERTModel,
+    # 'TopicBERT': TopicBERTModel,
+    # 'PMI': PMIModel,
+    # 'MGCG': MGCGModel,
+    # 'BERT': BERTModel,
+    # 'SASREC': SASRECModel,
+    # 'GRU4REC': GRU4RECModel,
+    # 'Popularity': PopularityModel,
+    # 'TextCNN': TextCNNModel,
+    # 'NTRD': NTRDModel
+    'HollaRec': HollaRec
 }
 
 

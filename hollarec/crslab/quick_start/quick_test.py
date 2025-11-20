@@ -22,13 +22,14 @@ def test_dataloader(config):
     # Load dataset
     dataset = get_dataset(config, config["tokenize"], restore=False, save=False)
     vocab = dataset.vocab
-
+    logger.info(f"ind2movie len: {len(vocab['ind2movie'])} sample:")
+    print(vocab['ind2movie'][122411])
     # Load dataloader
     dataloader = get_dataloader(config, dataset.train_data, vocab)
-    dataloader
-    for batch in dataloader.get_conv_data(batch_size=4, shuffle=False):
-        print(f"Batch data sample: {batch}")
-        break
+    # dataloader
+    # for batch in dataloader.get_conv_data(batch_size=4, shuffle=False):
+    #     print(f"Batch data sample: {batch}")
+    #     break
     
 
 
@@ -37,10 +38,9 @@ def test_dataloader(config):
 def run_quick_test(config):
     # Load config
     # config = Config("config/crs/hollarec/redial.yaml")
-
     # Test dataset
     test_dataset(config)
-    # Test dataloader
     test_dataloader(config)
+
 
     logger.info("*** RUN QUICK TEST SUCCESSFULLY! ***")
