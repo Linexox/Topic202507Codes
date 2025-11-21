@@ -13,20 +13,19 @@ from torch.utils.data import DataLoader, Dataset
 from torch_geometric.data import Data
 from transformers import AutoTokenizer
 
-from crslab.config import DATA_PATH, Config
+from crslab.config import DATA_PATH, Config, SAVE_PATH
 from crslab.data import get_dataset
 from crslab.model.crs.hollarec.HypergraphLlava.hypergraph_layers import HGNN
 
-model_path = 'D:\\.Workspace\\.MODEL\\HF-Model-Backup\\llava-1.5-7b-hf'
-assert osp.exists(model_path), f"Model path {model_path} does not exist."
+# model_path = 'D:\\.Workspace\\.MODEL\\HF-Model-Backup\\llava-1.5-7b-hf'
+model_path = 'llava-hf/llava-1.5-7b-hf'
 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
 # tokenizer.add_tokens(['<eot>'], speical_tokens=True)
 tokenizer.add_special_tokens({'additional_special_tokens': ['<eot>']})
 print(tokenizer)
 print(tokenizer.vocab_size)
-# print(f"Tokenizer loaded from {model_path} with vocab size {tokenizer.vocab_size}.")
-# tokenizer.
-# logger.info(f"***** Tokenizer loaded from {model_path} with vocab size {tokenizer.vocab_size}.")
+
+import time
 
 class Stage1Config:
     """Configuration for Stage 1 training"""
@@ -47,10 +46,14 @@ class Stage1Config:
             'text_max_length': 64,
             'use_half_precision': False,
             'batch_size': 8,
-            'learning_rate': 1e-4,
-            'lr': 1e-4,
+            # 'learning_rate': 1e-4,
+            'lr': 2e-5,
             'num_epochs': 10,
             'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+            'save_path': osp.join(SAVE_PATH, 'text_graph_grounding', time.strftime("%Y%m%d_%H%M%S")),
+            'lambda1': 1.0,
+            'lambda2': 3.0,
+            'lambda3': 3.0,
         }
         for k, v in opt_dict.items():
             # self.__setitem__(k, v)
@@ -59,7 +62,7 @@ class Stage1Config:
 
 
 class Stage1Dataset(Dataset):
-    def __init__(self, config, dataset, split: str = 'train'):
+    def __init__(self, config: Stage1Config, dataset, split: str = 'train'):
         self.config = config
         self.dataset = dataset
         self.modalities = config.modalities
@@ -113,16 +116,20 @@ class Stage1Dataset(Dataset):
             # if (len(node_ids_unique))
             node_id2ind = {node_id: i for i, node_id in enumerate(node_ids_unique)} 
             node_id2title = {mid: self.dataset.vocab['ind2movie'][mid] for mid in node_ids_unique} # Dict[str -> str]
-            if len(node_ids_unique) == 0:
-                logger.error(f"cur_hg_target_ids: {cur_hg_target_ids}")
-                logger.error(f"cur_hg_edge_list: {cur_hg_edge_list}")
-                logger.error(f"cur_hg_node_ids: {cur_hg_node_ids}")
-                logger.error(f"node_ids_unique: {node_ids_unique}")
-                logger.error(f"Empty hypergraph constructed for modality {m} in sample index {idx}.")
+            # if len(node_ids_unique) == 0:
+            #     logger.error(f"cur_hg_target_ids: {cur_hg_target_ids}")
+            #     logger.error(f"cur_hg_edge_list: {cur_hg_edge_list}")
+            #     logger.error(f"cur_hg_node_ids: {cur_hg_node_ids}")
+            #     logger.error(f"node_ids_unique: {node_ids_unique}")
+            #     logger.error(f"Empty hypergraph constructed for modality {m} in sample index {idx}.")
             
             x = torch.stack([self.dataset.get_embedding(mid, modality=m, return_zero_if_missing=True) for mid in node_ids_unique]) # 按照node_ids_unique的顺序堆叠
+            x = x.to(self.config.device)
             cur_hg_node_ind = [node_id2ind[id] for id in cur_hg_node_ids] # 将原始节点ID为索引
-            edge_index = torch.tensor([cur_hg_node_ind, cur_hg_edges], dtype=torch.long)
+            cur_hg_node_ind = torch.tensor(cur_hg_node_ind, dtype=torch.long).to(self.config.device)
+            cur_hg_edges = torch.tensor(cur_hg_edges, dtype=torch.long).to(self.config.device)
+            # edge_index = torch.tensor([cur_hg_node_ind, cur_hg_edges], dtype=torch.long).to(self.config.device)
+            edge_index = torch.stack([cur_hg_node_ind, cur_hg_edges], dim=0)
             hg = Data(x=x, hyperedge_index=edge_index)
             data[m] = {
                 'hg' : hg,
@@ -168,7 +175,7 @@ class Stage1CLIP(nn.Module):
         for m in self.config.modalities:
             self.hgnn[m] = HGNN(
                 in_channels=getattr(config, f"{m}_dim"),
-                hidden_channels=config.hg_hidden_size,
+                hidden_channels=config.hg_hidden_size * 2,
                 out_channels=config.hg_hidden_size,
                 num_layers=config.num_layers,
                 dropout=config.dropout
@@ -180,7 +187,7 @@ class Stage1CLIP(nn.Module):
             heads = 8,
             attn_mask = self.build_attention_mask()
         )
-
+        
         # HuggingFace keeps `vocab_size` fixed after `add_special_tokens`, so use the
         # full length (base vocab + added tokens) when allocating the embedding.
         self.vocab_size = len(tokenizer)
@@ -188,8 +195,6 @@ class Stage1CLIP(nn.Module):
         self.positional_embedding = nn.Parameter(torch.empty(self.context_length, config.hg_hidden_size))
         self.ln_final = nn.LayerNorm(config.hg_hidden_size)
         self.text_projection = nn.Parameter(torch.empty(config.hg_hidden_size, config.hg_hidden_size))
-
-        # self.dtype = s
 
         self.optim = optim.Adam(
             [
@@ -201,6 +206,13 @@ class Stage1CLIP(nn.Module):
             ],
             lr = config.lr
         )
+        
+        # self.lambda1 = torch.tensor(getattr(config, 'lambda1', 1.0)).to(self.device)
+        # self.lambda2 = torch.tensor(getattr(config, 'lambda2', 1.0)).to(self.device)
+        # self.lambda3 = torch.tensor(getattr(config, 'lambda3', 1.0)).to(self.device)
+        self.lambda1 = getattr(config, 'lambda1', 1.0)
+        self.lambda2 = getattr(config, 'lambda2', 3.0)
+        self.lambda3 = getattr(config, 'lambda3', 3.0)
 
         self.initialize_parameters()
     
@@ -240,7 +252,9 @@ class Stage1CLIP(nn.Module):
         x = x.permute(1, 0, 2)  # LND -> NLD
         x = self.ln_final(x)
 
-        eot_positions = (token_ids != 0).sum(dim=1) - 1
+        # eot_positions = (token_ids != 0).sum(dim=1) - 1
+        eot_token_id = tokenizer.convert_tokens_to_ids('<eot>')
+        eot_positions = (token_ids == eot_token_id).int().argmax(dim=-1)
         sent_emb = x[torch.arange(x.size(0), device=device), eot_positions, :]
 
         if self.text_projection is not None:
@@ -261,38 +275,54 @@ class Stage1CLIP(nn.Module):
     def forward(self, batched_data: Dict[str, Dict[str, List]], temperature: float = 0.07) -> Dict[str, Union[torch.Tensor, Dict[str, float]]]:
         """Compute alignment loss for a batch of modality-specific hypergraphs."""
         device = self.positional_embedding.device
-        total_loss: Optional[torch.Tensor] = None
+        total_loss = 0.0
         modality_metrics: Dict[str, float] = {}
         active_modalities = 0
+        # temperature = torch.tensor(temperature).to(device)
+        # batchs_size 
 
         for modality in self.config.modalities:
-            batch_graphs = batched_data[modality]['hg']
-            batch_nodes = batched_data[modality]['nodes'] # unique node ids, List[List[str]]
-            batch_id2title = batched_data[modality]['id2title']
 
             modality_loss = 0.0
             modality_samples = 0
-            total_loss = 0.0
 
-            for hg, node_ids, id2title in zip(batch_graphs, batch_nodes, batch_id2title): # batch中逐个处理
-                if len(node_ids) == 0:
+            for hg, nodes, id2ind, id2title, target_ids, neighbor_ids in zip(
+                batched_data[modality]['hg'],
+                batched_data[modality]['nodes'],
+                batched_data[modality]['id2ind'],
+                batched_data[modality]['id2title'],
+                batched_data[modality]['target_ids'],
+                batched_data[modality]['neighbor_ids']
+            ):
+                if len(nodes) == 0:
                     continue
 
-                node_titles = [id2title[node_id] for node_id in node_ids]
-                text_emb = self._encode_texts_flat(node_titles)
-                graph_emb = self._encode_graph_nodes(hg, modality)
-
-                assert graph_emb.size(0) == text_emb.size(0)
-
-                graph_emb = F.normalize(graph_emb, dim=-1) # [N, D]
-                text_emb = F.normalize(text_emb, dim=-1) # [N, D]
-
-                logits = torch.matmul(graph_emb, text_emb.transpose(0, 1)) / temperature
-                labels = torch.arange(logits.size(0), device=device)
-                loss = 0.5 * (
-                    F.cross_entropy(logits, labels) +
-                    F.cross_entropy(logits.transpose(0, 1), labels)
-                )
+                node_titles = [id2title[nid] for nid in nodes]
+                target_ind = [id2ind[tid] for tid in target_ids]
+                neighor_ind = [[id2ind[nid] for nid in cur_neighbor] for cur_neighbor in neighbor_ids]
+                all_text_emb = self._encode_texts_flat(node_titles)
+                all_node_emb = self._encode_graph_nodes(hg, modality)
+                
+                target_text_emb = all_text_emb[target_ind]
+                target_node_emb = all_node_emb[target_ind]
+                neighbor_text_emb = torch.stack([
+                    all_text_emb[torch.tensor(cur_neighor_ind, dtype=torch.long, device=device)].mean(dim=0)
+                    for cur_neighor_ind in neighor_ind
+                ], dim=0)
+                
+                target_text_emb = F.normalize(target_text_emb, dim=-1)
+                target_node_emb = F.normalize(target_node_emb, dim=-1)
+                neighbor_text_emb = F.normalize(neighbor_text_emb, dim=-1)
+                
+                # NxD dot (NxD).T -> NxN
+                L1 = torch.matmul(target_node_emb, target_text_emb.transpose(0, 1)) / temperature
+                L2 = torch.matmul(target_node_emb, neighbor_text_emb.transpose(0, 1)) / temperature
+                L3 = torch.matmul(target_text_emb, neighbor_text_emb.transpose(0, 1)) / temperature
+                labels = torch.arange(L1.size(0), device=device)
+                loss = \
+                    self.lambda1 * 0.5 * (F.cross_entropy(L1, labels) + F.cross_entropy(L1.transpose(0, 1), labels)) + \
+                    self.lambda2 * 0.5 * (F.cross_entropy(L2, labels) + F.cross_entropy(L2.transpose(0, 1), labels)) + \
+                    self.lambda3 * 0.5 * (F.cross_entropy(L3, labels) + F.cross_entropy(L3.transpose(0, 1), labels))
 
                 modality_loss += loss
                 modality_samples += 1
@@ -310,7 +340,6 @@ def tokenize(texts: Union[str, List[str]], context_length:int = 64, truncate:boo
     if isinstance(texts, str):
         texts = [texts]
     sot_token = tokenizer.convert_tokens_to_ids('<s>')
-    # eot_token = tokenizer.convert_tokens_to_ids('</s>')
     eot_token = tokenizer.convert_tokens_to_ids('<eot>')
     all_tokens = [[sot_token] + tokenizer.encode(text) + [eot_token] for text in texts]
     result = torch.zeros(len(all_tokens), context_length, dtype=torch.long)
@@ -339,10 +368,14 @@ class Stage1Trainer:
         for epoch in range(self.config.num_epochs):
             logger.info(f"Starting epoch {epoch+1}/{self.config.num_epochs}")
             train_loss = self.train_one_epoch(epoch)
-            logger.info(f"Epoch {epoch+1} train loss: {train_loss:.4f}")
+            logger.info(f"****** Epoch {epoch+1} train loss: {train_loss:.4f}")
             if self.valid_loader is not None:
                 val_loss = self.validate(epoch)
-                logger.info(f"Epoch {epoch+1} valid loss: {val_loss:.4f}")
+                logger.info(f"****** Epoch {epoch+1} valid loss: {val_loss:.4f}")
+            
+            # Save model checkpoint
+            checkpoint_path = osp.join(self.config.save_path, f'stage1_epoch{epoch+1}.pt')
+            torch.save(self.model.state_dict(), checkpoint_path)
 
     def train_one_epoch(self, epoch: int):
         self.model.train()
@@ -361,7 +394,7 @@ class Stage1Trainer:
             self.model.optim.step()
             epoch_loss += loss.item()
             batch_i += 1
-            if batch_i % 10 == 0:
+            if batch_i % 20 == 0:
                 logger.info(f"Batch {batch_i}, Loss: {loss.item():.4f}")
         avg_loss = epoch_loss / max(1, len(data_loader))
         return avg_loss
@@ -381,12 +414,10 @@ class Stage1Trainer:
         avg_loss = total_loss / max(1, len(data_loader))
         return avg_loss
 
-
 def main(config):
-    # Example usage
-    # config = Stage1Config()
-    # redial_dataset = ReDialDataset(data_path='')
+    
     stage1config = Stage1Config()
+    logger.add(osp.join(stage1config.save_path, 'training.log'))
     redial_dataset = get_dataset(config, 'llava', restore=False, save=False)
     train_dataset = Stage1Dataset(stage1config, redial_dataset, split='train')
     valid_dataset = Stage1Dataset(stage1config, redial_dataset, split='valid')
@@ -396,4 +427,7 @@ def main(config):
 
     model = Stage1CLIP(stage1config, device=stage1config.device)
     trainer = Stage1Trainer(model, train_loader, valid_loader, stage1config)
+    logger.info("Starting Stage 1 training...")
+    logger.info(f"Using device: {stage1config.device}")
     trainer.fit()
+    logger.info("Stage 1 training completed.")
