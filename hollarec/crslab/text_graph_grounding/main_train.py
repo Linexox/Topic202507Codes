@@ -17,8 +17,10 @@ from crslab.config import DATA_PATH, Config, SAVE_PATH
 from crslab.data import get_dataset
 from crslab.model.crs.hollarec.HypergraphLlava.hypergraph_layers import HGNN
 
+EPOCH_INFO_STEP = 500
 # model_path = 'D:\\.Workspace\\.MODEL\\HF-Model-Backup\\llava-1.5-7b-hf'
-model_path = 'llava-hf/llava-1.5-7b-hf'
+# model_path = 'llava-hf/llava-1.5-7b-hf'
+model_path = '/root/.hf_model/llava'
 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
 # tokenizer.add_tokens(['<eot>'], speical_tokens=True)
 tokenizer.add_special_tokens({'additional_special_tokens': ['<eot>']})
@@ -270,6 +272,12 @@ class Stage1CLIP(nn.Module):
         # move data tensors to device
         data = Data(x=data.x.to(device), hyperedge_index=data.hyperedge_index.to(device))
         h_out = self.hgnn[modality](data)
+        
+        if (torch.isnan(h_out).any()) or (torch.isinf(h_out).any()):
+            logger.error(f"NaN or Inf detected in HGNN output for modality {modality}.")
+            logger.error(f"Data x: {data.x}")
+            logger.error(f"Data hyperedge_index: {data.hyperedge_index}")
+            raise ValueError("NaN or Inf in HGNN output.")
         return h_out
 
     def forward(self, batched_data: Dict[str, Dict[str, List]], temperature: float = 0.07) -> Dict[str, Union[torch.Tensor, Dict[str, float]]]:
@@ -306,13 +314,26 @@ class Stage1CLIP(nn.Module):
                 target_text_emb = all_text_emb[target_ind]
                 target_node_emb = all_node_emb[target_ind]
                 neighbor_text_emb = torch.stack([
-                    all_text_emb[torch.tensor(cur_neighor_ind, dtype=torch.long, device=device)].mean(dim=0)
-                    for cur_neighor_ind in neighor_ind
+                    all_text_emb[torch.tensor(cur_neighbor_ind, dtype=torch.long, device=device)].mean(dim=0)
+                    if len(cur_neighbor_ind) > 0
+                    else torch.zeros(all_text_emb.shape[-1], device=device)
+                    for cur_neighbor_ind in neighor_ind
                 ], dim=0)
+                # neighbor_text_emb_list = []
+                # for cur_neighor_ind in neighor_ind:
+                #     if len(cur_neighor_ind) > 0:
+                #         neigh_emb = all_text_emb[torch.tensor(cur_neighor_ind, dtype=torch.long, device=device)].mean(dim=0)
+                #     else:
+                #         neigh_emb = torch.zeros(all_text_emb.shape[-1], device=device)
+                #     neighbor_text_emb_list.append(neigh_emb)
+                # neighbor_text_emb = torch.stack([
+                #     all_text_emb[torch.tensor(cur_neighor_ind, dtype=torch.long, device=device)].mean(dim=0)
+                #     for cur_neighor_ind in neighor_ind
+                # ], dim=0)
                 
-                target_text_emb = F.normalize(target_text_emb, dim=-1)
-                target_node_emb = F.normalize(target_node_emb, dim=-1)
-                neighbor_text_emb = F.normalize(neighbor_text_emb, dim=-1)
+                target_text_emb = F.normalize(target_text_emb, dim=-1, eps=1e-6)
+                target_node_emb = F.normalize(target_node_emb, dim=-1, eps=1e-6)
+                neighbor_text_emb = F.normalize(neighbor_text_emb, dim=-1, eps=1e-6)
                 
                 # NxD dot (NxD).T -> NxN
                 L1 = torch.matmul(target_node_emb, target_text_emb.transpose(0, 1)) / temperature
@@ -394,7 +415,7 @@ class Stage1Trainer:
             self.model.optim.step()
             epoch_loss += loss.item()
             batch_i += 1
-            if batch_i % 20 == 0:
+            if batch_i % EPOCH_INFO_STEP == 0:
                 logger.info(f"Batch {batch_i}, Loss: {loss.item():.4f}")
         avg_loss = epoch_loss / max(1, len(data_loader))
         return avg_loss
