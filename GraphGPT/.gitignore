@@ -2,6 +2,8 @@
 # Created by https://www.toptal.com/developers/gitignore/api/visualstudiocode,macos,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=visualstudiocode,macos,python
 
+graphgpt/model/data
+
 ### macOS ###
 # General
 .DS_Store
@@ -229,4 +231,3 @@ pyrightconfig.json
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,macos,python
 
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
-

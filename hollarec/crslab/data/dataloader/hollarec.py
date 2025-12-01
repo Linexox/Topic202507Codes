@@ -26,10 +26,10 @@ class HollaRecDataLoader(BaseDataLoader):
         self.start_token_idx = vocab["tok2ind"]["<s>"]
         self.end_token_idx = vocab["tok2ind"]["</s>"]
         self.image_token_idx = vocab["tok2ind"]["<image>"]
-        self.hgraph_token_idx = vocab["tok2ind"]["<hgraph>"]
-        self.hg_patch_token_idx = vocab["tok2ind"]["<hg_patch>"]
-        self.hg_start_token_idx = vocab["tok2ind"]["<hg_start>"]
-        self.hg_end_token_idx = vocab["tok2ind"]["<hg_end>"]
+        # self.hgraph_token_idx = vocab["tok2ind"]["<hgraph>"]
+        # self.hg_patch_token_idx = vocab["tok2ind"]["<hg_patch>"]
+        # self.hg_start_token_idx = vocab["tok2ind"]["<hg_start>"]
+        # self.hg_end_token_idx = vocab["tok2ind"]["<hg_end>"]
         self.split_token_idx = vocab["tok2ind"].get("<split>", None)
 
         self.context_truncate = opt.get("context_truncate", None)

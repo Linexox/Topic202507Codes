@@ -48,6 +48,7 @@ DEFAULT_G_START_TOKEN = "<g_start>"
 DEFAULT_G_END_TOKEN = "<g_end>"
 
 
+# 配置模型相关参数，包括预训练路径、图模块设置等
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="facebook/opt-125m")
@@ -60,6 +61,7 @@ class ModelArguments:
     use_graph_start_end: bool = field(default=False)
 
 
+# 配置数据相关参数，包括数据路径、图处理配置等
 @dataclass
 class DataArguments:
     data_path: str = field(default=None,
@@ -73,6 +75,7 @@ class DataArguments:
     image_aspect_ratio: str = 'square'
 
 
+# 配置训练参数，扩展transformers的TrainingArguments，添加量化和LoRA等配置
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
@@ -108,6 +111,7 @@ class TrainingArguments(transformers.TrainingArguments):
     disable_tqdm: bool =False
 
 
+# 处理DeepSpeed Zero-3优化器的参数，将分布式参数收集到CPU
 def maybe_zero_3(param, ignore_status=False, name=None):
     from deepspeed import zero
     from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
@@ -122,6 +126,7 @@ def maybe_zero_3(param, ignore_status=False, name=None):
     return param
 
 
+# 获取PEFT（LoRA）相关的模型参数状态字典
 # Borrowed from peft.utils.get_peft_model_state_dict
 def get_peft_state_maybe_zero_3(named_params, bias):
     if bias == "none":
@@ -148,6 +153,7 @@ def get_peft_state_maybe_zero_3(named_params, bias):
     return to_return
 
 
+# 获取非LoRA的模型参数状态字典，通常用于保存不受LoRA影响的参数
 def get_peft_state_non_lora_maybe_zero_3(named_params, require_grad_only=True):
     to_return = {k: t for k, t in named_params if "lora_" not in k}
     if require_grad_only:
@@ -156,6 +162,7 @@ def get_peft_state_non_lora_maybe_zero_3(named_params, require_grad_only=True):
     return to_return
 
 
+# 查找模型中所有线性层的名称，用于LoRA配置
 def find_all_linear_names(model):
     cls = torch.nn.Linear
     lora_module_names = set()
@@ -170,6 +177,7 @@ def find_all_linear_names(model):
     return list(lora_module_names)
 
 
+# 安全地保存HuggingFace trainer的模型状态到磁盘
 def safe_save_model_for_hf_trainer(trainer: transformers.Trainer,
                                    output_dir: str):
     """Collects the state dict and dump to disk."""
@@ -188,6 +196,7 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer,
         trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
 
 
+# 智能调整tokenizer和embedding大小，添加新的特殊token
 def smart_tokenizer_and_embedding_resize(
     special_tokens_dict: Dict,
     tokenizer: transformers.PreTrainedTokenizer,
@@ -213,6 +222,7 @@ def smart_tokenizer_and_embedding_resize(
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
 
 
+# 对字符串列表进行tokenization处理
 def _tokenize_fn(strings: Sequence[str],
                  tokenizer: transformers.PreTrainedTokenizer) -> Dict:
     """Tokenize a list of strings."""
@@ -240,6 +250,7 @@ def _tokenize_fn(strings: Sequence[str],
     )
 
 
+# 掩盖目标序列中human部分的token，只对gpt回复部分计算损失
 def _mask_targets(target, tokenized_lens, speakers):
     # cur_idx = 0
     cur_idx = tokenized_lens[0]
@@ -251,6 +262,7 @@ def _mask_targets(target, tokenized_lens, speakers):
         cur_idx += tokenized_len
 
 
+# 为对话添加说话者标识和起止信号
 def _add_speaker_and_signal(header, source, get_conversation=True):
     """Add speaker and start/end signal on each round."""
     BEGIN_SIGNAL = "### "
@@ -272,6 +284,7 @@ def _add_speaker_and_signal(header, source, get_conversation=True):
     return conversation
 
 
+# 将对话中的图占位符<graph>替换为实际的图patch token序列
 def preprocess_graph(
     sources: Sequence[str],
     graph_cfg: dict,
@@ -284,18 +297,20 @@ def preprocess_graph(
         return sources
 
     for source in sources:
-        if graph_cfg['sep_graph_conv_front']:
+        if graph_cfg['sep_graph_conv_front']: # 如果在对话开头分离图卷积，则调整对话格式
             assert DEFAULT_GRAPH_TOKEN in source[0]['value']
             source[0]['value'] = source[0]['value'].replace(DEFAULT_GRAPH_TOKEN, '').strip()
             source[0]['value'] = DEFAULT_GRAPH_TOKEN + conversation_lib.default_conversation.sep + conversation_lib.default_conversation.roles[0] + ": " + source[0]['value']
         for sentence in source:
-            replace_token = DEFAULT_GRAPH_PATCH_TOKEN * graph_token_len
-            if graph_cfg['use_graph_start_end']:
+            replace_token = DEFAULT_GRAPH_PATCH_TOKEN * graph_token_len # 
+            if graph_cfg['use_graph_start_end']: # 如果使用起止标识，则添加起止标识
                 replace_token = DEFAULT_G_START_TOKEN + replace_token + DEFAULT_G_END_TOKEN
+            # 替换<graph>占位符
             sentence["value"] = sentence["value"].replace(DEFAULT_GRAPH_TOKEN, replace_token)
 
     return sources
 
+# 处理链接预测任务的两个图占位符，分别替换为对应的patch token序列
 def preprocess_graph_LP(
     sources: Sequence[str],
     graph_cfg: dict,
@@ -338,6 +353,7 @@ def preprocess_graph_LP(
     return sources
 
 
+# 使用Vicuna v1.1对话格式预处理数据，构建训练用的input_ids和labels
 def preprocess_v1(
     sources,
     tokenizer: transformers.PreTrainedTokenizer,
@@ -352,12 +368,12 @@ def preprocess_v1(
             # Skip the first one if it is not from human
             source = source[1:]
 
-        conv.messages = []
+        conv.messages = [] # reset messages
         for j, sentence in enumerate(source):
             role = roles[sentence["from"]]
             assert role == conv.roles[j % 2], f"{i}"
             conv.append_message(role, sentence["value"])
-        conversations.append(conv.get_prompt())
+        conversations.append(conv.get_prompt()) # 转化为对话字符串，然后加入列表 
 
     # Tokenize conversations
     input_ids = tokenizer(
@@ -369,31 +385,32 @@ def preprocess_v1(
     ).input_ids
     targets = input_ids.clone()
 
-    assert conv.sep_style == conversation_lib.SeparatorStyle.TWO
+    assert conv.sep_style == conversation_lib.SeparatorStyle.TWO # 双分隔符风格，使用sep2来分割对话轮次(user+gpt)
 
     # Mask targets
     sep = conv.sep + conv.roles[1] + ": "
     for conversation, target in zip(conversations, targets):
-        total_len = int(target.ne(tokenizer.pad_token_id).sum())
+        total_len = int(target.ne(tokenizer.pad_token_id).sum()) # 计算非pad token的总长度
 
-        rounds = conversation.split(conv.sep2)
+        rounds = conversation.split(conv.sep2) # 按照对话轮次(round)分割对话
+        # conv.sep2
         cur_len = 1
-        target[:cur_len] = IGNORE_INDEX
+        target[:cur_len] = IGNORE_INDEX # 掩码系统提示部分
         for i, rou in enumerate(rounds):
             if rou == "":
                 break
 
-            parts = rou.split(sep)
-            if len(parts) != 2:
+            parts = rou.split(sep) # 分割user和gpt回复
+            if len(parts) != 2: # 如果格式不对则跳过
                 break
-            parts[0] += sep
+            parts[0] += sep # 补回user-gpt之间的分隔符(conv.sep + "gpt: ")
             round_len = len(tokenizer(rou).input_ids)
-            instruction_len = len(tokenizer(parts[0]).input_ids) - 2
+            instruction_len = len(tokenizer(parts[0]).input_ids) - 2 # 
 
             target[cur_len : cur_len + instruction_len] = IGNORE_INDEX
 
             cur_len += round_len
-        target[cur_len:] = IGNORE_INDEX
+        target[cur_len:] = IGNORE_INDEX # 剩余部分全部掩码
 
         if cur_len < tokenizer.model_max_length:
             if cur_len != total_len:
@@ -408,6 +425,7 @@ def preprocess_v1(
         labels=targets,
     )
 
+# 使用MPT对话格式预处理数据
 def preprocess_mpt(
     sources,
     tokenizer: transformers.PreTrainedTokenizer,
@@ -480,6 +498,7 @@ def preprocess_mpt(
     )
 
 
+# 根据对话格式版本选择相应的预处理方法
 def preprocess(
     sources: Sequence[str],
     tokenizer: transformers.PreTrainedTokenizer,
@@ -514,9 +533,11 @@ def preprocess(
     return dict(input_ids=input_ids, labels=targets)
 
 
+# 标准的监督学习数据集，一次性加载并预处理所有数据
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
+    # 初始化数据集，加载JSON数据并进行预处理
     def __init__(self, data_path: str,
                  tokenizer: transformers.PreTrainedTokenizer):
         super(SupervisedDataset, self).__init__()
@@ -530,13 +551,16 @@ class SupervisedDataset(Dataset):
         self.input_ids = data_dict["input_ids"]
         self.labels = data_dict["labels"]
 
+    # 返回数据集大小
     def __len__(self):
         return len(self.input_ids)
 
+    # 获取第i个训练样本
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         return dict(input_ids=self.input_ids[i], labels=self.labels[i])
 
 
+# 懒加载的监督数据集，包含图数据处理，在__getitem__时才进行预处理
 class LazySupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
@@ -555,9 +579,11 @@ class LazySupervisedDataset(Dataset):
         graph_data_path = kwargs.get('graph_data_path')
         self.graph_data_all = torch.load(graph_data_path)
 
+    # 返回数据集大小
     def __len__(self):
         return len(self.list_data_dict)
 
+    # 动态处理第i个样本，包括图数据加载和占位符替换
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         sources = self.list_data_dict[i]
         if isinstance(i, int):
@@ -580,7 +606,7 @@ class LazySupervisedDataset(Dataset):
                     self.graph_cfg, cur_token_len)
             else:
                 sources = copy.deepcopy([e["conversations"] for e in sources])
-        else: 
+        else: # 连接预测任务
             if 'graph' in sources[0]:
                 graph_dict = self.list_data_dict[i]['graph']
                 graph_edge_index_1 = torch.Tensor(copy.deepcopy(graph_dict['edge_index_1'])).long()
@@ -600,7 +626,7 @@ class LazySupervisedDataset(Dataset):
                 sources = preprocess_graph_LP(
                     copy.deepcopy([e["conversations"] for e in sources]),
                     self.graph_cfg, cur_token_len_1, cur_token_len_2)
-            else:
+            else: # 如果没有图数据，则直接复制对话数据
                 sources = copy.deepcopy([e["conversations"] for e in sources])
         data_dict = preprocess(
             sources,
@@ -637,6 +663,7 @@ class LazySupervisedDataset(Dataset):
                 data_dict['graph_data'] = Data(graph_node = torch.zeros(3, node_feas), edge_index=torch.zeros(2, 3), target_node = torch.tensor([0]))
         return data_dict
     
+# 懒加载监督数据集的备份版本，简化版的图数据处理
 class LazySupervisedDataset_back(Dataset):
     """Dataset for supervised fine-tuning."""
 
@@ -655,9 +682,11 @@ class LazySupervisedDataset_back(Dataset):
         graph_data_path = kwargs.get('graph_data_path')
         self.graph_data_all = torch.load(graph_data_path)
 
+    # 返回数据集大小
     def __len__(self):
         return len(self.list_data_dict)
 
+    # 获取第i个训练样本（备份版本）
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         sources = self.list_data_dict[i]
         if isinstance(i, int):
@@ -698,12 +727,15 @@ class LazySupervisedDataset_back(Dataset):
         return data_dict
 
 
+# 批量数据整理器，将多个样本组合成训练批次，处理padding和图数据
 @dataclass
 class DataCollatorForSupervisedDataset(object):
     """Collate examples for supervised fine-tuning."""
 
+    # 用于tokenization的预训练tokenizer
     tokenizer: transformers.PreTrainedTokenizer
 
+    # 将多个实例整理成一个训练批次
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
         input_ids, labels = tuple([instance[key] for instance in instances]
                                   for key in ("input_ids", "labels"))
@@ -737,6 +769,7 @@ class DataCollatorForSupervisedDataset(object):
         return batch
 
 
+# 创建监督学习的数据模块，包括数据集和数据收集器
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
                                 data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
@@ -757,6 +790,7 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
                 eval_dataset=None,
                 data_collator=data_collator)
 
+# 主训练函数，配置模型、数据、训练器并执行训练
 def train():
     parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments))

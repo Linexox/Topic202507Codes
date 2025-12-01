@@ -3,14 +3,16 @@ from typing import List, Optional, Tuple, Union, Dict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from transformers import AutoConfig, LlavaConfig, LlavaModel
-from transformers.modeling_outputs import BaseModelOutputWithPast
-
-from .hypergraph_layers import HGNN
 from torch_geometric.data import Data
 
+from transformers.modeling_outputs import BaseModelOutputWithPast
+from transformers import AutoConfig, AutoModel,LlavaConfig, LlavaModel
+
+from .hypergraph_layers import HGNN
+from crslab.config import PRETRAIN_PATH, DATA_PATH
+
 import os.path as osp
+from loguru import logger
 import json
 import glob
 
@@ -70,14 +72,18 @@ def load_from_pretrained(model_name, pretrain_model_path):
 class MMHypergraphLlavaModel(LlavaModel):
     config_class = MMHypergraphLlavaConfig
 
-    def __init__(self, config: MMHypergraphLlavaConfig, vocab: Optional[Dict]=None):
+    def __init__(self, config: LlavaConfig):
         super().__init__(config)
         self.config = config
+        
+    
+    def initialize_hgraph_modules(self, vocab, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self.config, k, v)
         self.vocab = vocab
         self._load_special_tokens()
-        self._build_mm_hgraph_tower(config.graph_tower)
-        config.use_mm_hgraph_proj = True
-        self._build_mm_hgraph_projector(config.use_mm_hgraph_proj)
+        self._build_mm_hgraph_tower(self.config.hgraph_tower)
+        self._build_mm_hgraph_projector(self.config.train_mm_hgraph_proj)
     
     def _load_special_tokens(self):
         self.hgraph_token_id = {
@@ -108,27 +114,43 @@ class MMHypergraphLlavaModel(LlavaModel):
     def _build_mm_hgraph_tower(self, graph_tower_name: str):
         self.mm_hgraph_tower = nn.ModuleDict()
         if graph_tower_name == "HGNN":
+            pretrain_path = osp.join(PRETRAIN_PATH, self.config.pretrained_mm_hgraph_tower_path)
+            full_state_dict = torch.load(pretrain_path, map_location='cpu')
+            mm_state_dict = {m : {} for m in ["txt", "img", "vdo", "ado"]}
+            for k, v in full_state_dict.items():
+                if k.startswith("hgnn."):
+                    m = k.split('.')[1]
+                    new_k = '.'.join(k.split('.')[2:])
+                    mm_state_dict[m][new_k] = v
             for modality in ["txt", "img", "vdo", "ado"]:
-                self.mm_hgraph_tower[modality], _ = load_from_pretrained(
-                    HGNN,
-                    pretrain_model_path=osp.join(
-                        self.config.pretrained_hgnn_path,
-                        f"{modality}_hgraph_tower"
-                    )
+                self.mm_hgraph_tower[modality] = HGNN(
+                    in_channels=getattr(self.config, f'{modality}_dim'),
+                    hidden_channels=self.config.hg_hidden_size * 2,
+                    out_channels=self.config.hg_hidden_size,
+                    num_layers=getattr(self.config, 'hg_num_layers', 2),
+                    dropout=getattr(self.config, 'hg_dropout', 0.1),
                 )
+                self.mm_hgraph_tower[modality].load_state_dict(mm_state_dict[modality])
                 self.mm_hgraph_tower[modality].requires_grad_(False)
+                logger.info(f"Loaded pretrained HGNN for modality '{modality}' from {pretrain_path}")
         else:
             raise ValueError(f"Unsupported graph tower: {graph_tower_name}")
     
-    def _build_mm_hgraph_projector(self, use_mm_hgraph_proj: bool):
-        if not use_mm_hgraph_proj:
-            return
+    def _build_mm_hgraph_projector(self, train_mm_hgraph_proj: bool):
         self.mm_hgraph_projector = nn.ModuleDict()
+        pretrain_path = osp.join(PRETRAIN_PATH, self.config.pretrained_mm_hgraph_proj_path) if self.config.pretrained_mm_hgraph_proj_path else None
+        full_state_dict = torch.load(pretrain_path, map_location='cpu') if pretrain_path else None
+
         for modality in ["txt", "img", "vdo", "ado"]:
             self.mm_hgraph_projector[modality] = nn.Linear(
                 self.config.hg_hidden_size,
                 self.config.hidden_size
             )
+            if full_state_dict is not None:
+                raise('Not implemented loading projector from pretrained yet.')
+            self.mm_hgraph_projector[modality].requires_grad_(train_mm_hgraph_proj)
+            logger.info(f"Initialized hypergraph projector for modality '{modality}', trainable={train_mm_hgraph_proj}")
+                
     
     def forward(
         self,
@@ -180,7 +202,8 @@ class MMHypergraphLlavaModel(LlavaModel):
                 device=inputs_embeds.device,
                 dtype=inputs_embeds.dtype
             )
-            # dummy_hgraph_features = self.mm_hgraph_projector['txt'](dummy_hgraph_features)
+            dummy_hgraph_features = self.mm_hgraph_projector['txt'](dummy_hgraph_features)
+            
             mm_dummy_hgraph_features = {
                 m: self.mm_hgraph_projector[m](dummy_hgraph_features)
                 for m in mm_hgraph_tower.keys()
@@ -209,6 +232,7 @@ class MMHypergraphLlavaModel(LlavaModel):
                 for m in ["txt", "img", "vdo", "ado"]:
                     # 检查当前模态超图是否存在于输入中
                     if (cur_input_ids == self.hg_patch_token_id[m]).sum() == 0:
+                        # 该模态超图不存在，使用dummy特征占位
                         cur_input_embeds = cur_input_embeds + (0. * mm_dummy_hgraph_features[m]).sum()
                         continue
 
@@ -239,7 +263,7 @@ class MMHypergraphLlavaModel(LlavaModel):
                                 cur_new_input_embeds = torch.cat((
                                     cur_input_embeds[:hg_start_token_pos].detach(),
                                     cur_input_embeds[hg_start_token_pos:hg_start_token_pos + 1],
-                                    cur_hgraph_features,
+                                    cur_hgraph_features, # （num_patches, hidden_size）
                                     cur_input_embeds[hg_start_token_pos + num_patches + 1:hg_start_token_pos + num_patches + 2],
                                     cur_input_embeds[hg_start_token_pos + num_patches + 2:].detach()
                                 ), dim=0)
@@ -267,3 +291,6 @@ class MMHypergraphLlavaModel(LlavaModel):
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict
             )
+
+AutoConfig.register("MMHypergraphLlava", MMHypergraphLlavaConfig)
+AutoModel.register(MMHypergraphLlavaConfig, MMHypergraphLlavaModel)

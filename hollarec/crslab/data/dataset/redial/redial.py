@@ -60,7 +60,7 @@ class ReDialDataset(BaseDataset):
                 os.path.join(self.dpath, "tokenizer"),
             )
             # print(self.tokenizer)
-        self._verify_tokenizer_special_tokens()
+        # self._verify_tokenizer_special_tokens()
 
         super().__init__(opt, dpath=self.dpath, resource=resource, restore=restore, save=save)
 
