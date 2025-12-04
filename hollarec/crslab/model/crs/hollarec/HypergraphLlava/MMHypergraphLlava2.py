@@ -8,10 +8,16 @@ from torch_geometric.data import Data
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers import AutoConfig, AutoModel,LlavaConfig, LlavaModel
 
-from .hypergraph_layers import HGNN
-from crslab.config import PRETRAIN_PATH, DATA_PATH
+# from .hypergraph_layers import HGNN
+from hypergraph_layers import HGNN
+# from crslab.model.crs.hollarec.HypergraphLlava.hypergraph_layers import HGNN
+# from crslab.config import PRETRAIN_PATH, DATA_PATH
 
+import os
 import os.path as osp
+from safetensors import safe_open
+from safetensors.torch import save_file, load_file
+from tqdm import tqdm
 from loguru import logger
 import json
 import glob
@@ -72,18 +78,21 @@ def load_from_pretrained(model_name, pretrain_model_path):
 class MMHypergraphLlavaModel(LlavaModel):
     config_class = MMHypergraphLlavaConfig
 
-    def __init__(self, config: LlavaConfig):
+    def __init__(
+        self,
+        config: LlavaConfig,
+        vocab: Optional[Dict[str, Dict]] = None,
+    ):
+        logger.info("Initializing MMHypergraphLlavaModel...")
         super().__init__(config)
+        logger.info("Superclass LlavaModel initialized.")
         self.config = config
-        
-    
-    def initialize_hgraph_modules(self, vocab, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self.config, k, v)
         self.vocab = vocab
-        self._load_special_tokens()
+        if self.vocab is not None:
+            self._load_special_tokens()
         self._build_mm_hgraph_tower(self.config.hgraph_tower)
-        self._build_mm_hgraph_projector(self.config.train_mm_hgraph_proj)
+        self._build_mm_hgraph_projector()
+        
     
     def _load_special_tokens(self):
         self.hgraph_token_id = {
@@ -114,14 +123,6 @@ class MMHypergraphLlavaModel(LlavaModel):
     def _build_mm_hgraph_tower(self, graph_tower_name: str):
         self.mm_hgraph_tower = nn.ModuleDict()
         if graph_tower_name == "HGNN":
-            pretrain_path = osp.join(PRETRAIN_PATH, self.config.pretrained_mm_hgraph_tower_path)
-            full_state_dict = torch.load(pretrain_path, map_location='cpu')
-            mm_state_dict = {m : {} for m in ["txt", "img", "vdo", "ado"]}
-            for k, v in full_state_dict.items():
-                if k.startswith("hgnn."):
-                    m = k.split('.')[1]
-                    new_k = '.'.join(k.split('.')[2:])
-                    mm_state_dict[m][new_k] = v
             for modality in ["txt", "img", "vdo", "ado"]:
                 self.mm_hgraph_tower[modality] = HGNN(
                     in_channels=getattr(self.config, f'{modality}_dim'),
@@ -130,28 +131,95 @@ class MMHypergraphLlavaModel(LlavaModel):
                     num_layers=getattr(self.config, 'hg_num_layers', 2),
                     dropout=getattr(self.config, 'hg_dropout', 0.1),
                 )
-                self.mm_hgraph_tower[modality].load_state_dict(mm_state_dict[modality])
                 self.mm_hgraph_tower[modality].requires_grad_(False)
-                logger.info(f"Loaded pretrained HGNN for modality '{modality}' from {pretrain_path}")
+                logger.info(f"Initialized HGNN for modality '{modality}'")
         else:
             raise ValueError(f"Unsupported graph tower: {graph_tower_name}")
     
-    def _build_mm_hgraph_projector(self, train_mm_hgraph_proj: bool):
+    def _build_mm_hgraph_projector(self):
         self.mm_hgraph_projector = nn.ModuleDict()
-        pretrain_path = osp.join(PRETRAIN_PATH, self.config.pretrained_mm_hgraph_proj_path) if self.config.pretrained_mm_hgraph_proj_path else None
-        full_state_dict = torch.load(pretrain_path, map_location='cpu') if pretrain_path else None
-
         for modality in ["txt", "img", "vdo", "ado"]:
             self.mm_hgraph_projector[modality] = nn.Linear(
                 self.config.hg_hidden_size,
                 self.config.hidden_size
             )
-            if full_state_dict is not None:
-                raise('Not implemented loading projector from pretrained yet.')
-            self.mm_hgraph_projector[modality].requires_grad_(train_mm_hgraph_proj)
-            logger.info(f"Initialized hypergraph projector for modality '{modality}', trainable={train_mm_hgraph_proj}")
+            self.mm_hgraph_projector[modality].requires_grad_(False)
+            logger.info(f"Initialized hypergraph projector for modality '{modality}'")
                 
-    
+    def load_pretrained(self, pretrained_dir: str):
+        for file in glob.glob(osp.join(pretrained_dir, "*.safetensors")):
+            with safe_open(file, framework="pt", device="cpu") as f:
+                for weight_name in tqdm(f.keys(), desc='loading from pretrained'):
+                    weight_tensor = f.get_tensor(weight_name)
+                    param = self.get_parameter(weight_name)
+                    param.data.copy_(weight_tensor)
+
+    def load_pretrained_llava(self, pretrained_dir: str):
+        """从safetensors加载LLaVA预训练权重"""
+        from safetensors.torch import load_file
+        
+        logger.info(f"Loading from {pretrained_dir}")
+        
+        # 合并所有safetensors文件
+        state_dict = {}
+        for file in glob.glob(osp.join(pretrained_dir, "*.safetensors")):
+            state_dict.update(load_file(file))
+            logger.info(f"Loaded {osp.basename(file)}")
+
+        new_state_dict = {}
+        for key, value in state_dict.items():
+            # 将 'language_model.model.xxx' 转换为 'language_model.xxx'
+            if key.startswith('language_model.model.'):
+                new_key = key.replace('language_model.model.', 'language_model.')
+                new_state_dict[new_key] = value
+                # logger.debug(f"Remapped: {key} → {new_key}")
+            else:
+                new_state_dict[key] = value
+        
+        missing_keys, unexpected_keys = self.load_state_dict(new_state_dict, strict=False)
+        
+        logger.info(f"Loaded {len(new_state_dict)} parameters")
+        logger.warning(f"Missing: {len(missing_keys)}, Unexpected: {len(unexpected_keys)}")
+        
+        if missing_keys:
+            logger.warning(f"missing keys: {missing_keys}")
+        if unexpected_keys:
+            logger.warning(f"unexpected keys {unexpected_keys}")
+        return missing_keys, unexpected_keys
+        
+
+    def _get_mm_hgraph_tower(self) -> nn.ModuleDict:
+        return self.mm_hgraph_tower
+
+    def _get_mm_hgraph_projector(self) -> nn.ModuleDict:
+        return self.mm_hgraph_projector
+
+    def save_2_safetensors(self, save_dir, max_bytes=5*1024**3):
+        os.makedirs(save_dir, exist_ok=True)
+        state_dict = self.state_dict()
+
+        def compute_tensor_bytes(t: torch.Tensor):
+            return t.numel() * t.element_size()
+        
+        shards = []
+        cur_shard = {}
+        cur_bytes = 0
+
+        for k, t in state_dict.items():
+            tensor_bytes = compute_tensor_bytes(t)
+            if cur_bytes + tensor_bytes > max_bytes and cur_shard:
+                shards.append(cur_shard)
+                cur_shard = {}
+                cur_bytes = 0
+            cur_shard[k] = t
+            cur_bytes += tensor_bytes
+        if cur_shard:
+            shards.append(cur_shard)
+            for i, shard in tqdm(enumerate(shards), desc='saving shards'):
+                shard_path = os.path.join(save_dir, f"MMHypergraphLlava-{i+1:05}-of-{len(shards):05}.safetensors")
+            save_file(shard, shard_path)
+            # logger.info(f"Saved shard {i+1}")
+
     def forward(
         self,
         input_ids: Optional[torch.Tensor] = None,
@@ -292,7 +360,36 @@ class MMHypergraphLlavaModel(LlavaModel):
                 return_dict=return_dict
             )
         
-        
+# AutoConfig.register("MMHypergraphLlava", MMHypergraphLlavaConfig)
+# AutoModel.register(MMHypergraphLlavaConfig, MMHypergraphLlavaModel)
 
-AutoConfig.register("MMHypergraphLlava", MMHypergraphLlavaConfig)
-AutoModel.register(MMHypergraphLlavaConfig, MMHypergraphLlavaModel)
+if __name__ == '__main__':
+    config_path = 'D:\.Workspace\.MODEL\HF-Model-Backup\llava-1.5-7b-hf'
+    config = MMHypergraphLlavaConfig.from_pretrained(config_path)
+    attr_dict = {
+        'hidden_size': 4096,
+        # hgraph tower config
+        'hgraph_tower': 'HGNN',
+        'txt_dim': 1024,
+        'img_dim': 512,
+        'vdo_dim': 2048,
+        'ado_dim': 1024,
+        'hg_hidden_size': 256,
+        'num_layers': 2,
+        'dropout': 0.1,
+        # hgraph projector config
+        'train_mm_hgraph_proj': True,
+        'pretrained_mm_hgraph_proj_path' : None,
+    }
+    for k, v in attr_dict.items():
+        setattr(config, k, v)
+    model = MMHypergraphLlavaModel(config)
+    # model.load_pretrained(config_path)
+    for i, (name, _) in enumerate(model.named_parameters()):
+        print(name, end='   ')
+        if i>50:
+            break
+    model.load_pretrained_llava(config_path)
+    save_path = 'D:\.Workspace\Topic202507Codes\hollarec\pretrain\mmhgllv4g-t-grounding'
+    model.save_2_safetensors(save_path)
+    config.save_pretrained(save_path)

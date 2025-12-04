@@ -169,6 +169,8 @@ class Conversation:
             "sep": self.sep,
             "sep2": self.sep2,
         }
+    
+    
 
 conv_MMHypergraphLlava_v1 = Conversation(
     system="You are MMHypergraphLlava, a large language and hypergraph-structral assistant trained by Wusaqi."
@@ -184,3 +186,9 @@ conv_MMHypergraphLlava_v1 = Conversation(
 )
 
 default_conversation = conv_MMHypergraphLlava_v1
+
+if __name__ == '__main__':
+    conv = default_conversation.copy()
+    conv.append_message("USER", "Hello, how are you?")
+    print(conv.get_prompt())
+    pass

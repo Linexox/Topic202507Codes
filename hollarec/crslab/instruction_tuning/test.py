@@ -4,6 +4,7 @@ from crslab.data import get_dataset
 from crslab.model.crs.hollarec.HypergraphLlava import MMHypergraphLlavaModel, MMHypergraphLlavaConfig
 from crslab.config import PRETRAIN_PATH
 import os.path as osp
+from loguru import logger
 
 def main(data_config):
     config = MMHypergraphLlavaConfig()
@@ -29,8 +30,9 @@ def main(data_config):
         setattr(config, k, v)
     
     # redial_dataset = ReDialDataset(config)
-    redial_dataset = get_dataset(data_config, 'llava', restore=False, save=False)
-    vocab = redial_dataset.vocab
-    model = MMHypergraphLlavaModel.from_pretrained(r'D:\.Workspace\.MODEL\mm-hypergraph-llava')
-    model.initialize_hgraph_modules(vocab)
+    # redial_dataset = get_dataset(data_config, 'llava', restore=False, save=False)
+    # vocab = redial_dataset.vocab
+    model = MMHypergraphLlavaModel.from_pretrained('D:\.Workspace\.MODEL\HF-Model-Backup\llava-1.5-7b-hf')
+    logger.info("MMHypergraphLlavaModel loaded from pretrained LlavaModel.")
+    # model.initialize_hgraph_modules(vocab)
     

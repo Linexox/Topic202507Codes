@@ -64,28 +64,6 @@ class ReDialDataset(BaseDataset):
 
         super().__init__(opt, dpath=self.dpath, resource=resource, restore=restore, save=save)
 
-    def _verify_tokenizer_special_tokens(self):
-        DEFAULT_HYPERGRAPH_TOKEN = "<hgraph>"
-        DEFAULT_HYPERGRAPH_PATCH_TOKEN = "<hg_patch>"
-        DEFAULT_HG_START_TOKEN = "<hg_start>"
-        DEFAULT_HG_END_TOKEN = "<hg_end>"
-        required_tokens = [
-            DEFAULT_HYPERGRAPH_TOKEN,
-            DEFAULT_HYPERGRAPH_PATCH_TOKEN,
-            DEFAULT_HG_START_TOKEN,
-            DEFAULT_HG_END_TOKEN,
-        ]
-        for token in required_tokens:
-            if token not in self.tokenizer.get_vocab():
-                print(self.tokenizer.all_special_tokens)
-                logger.error(f"Tokenizer is missing required special token: {token}")
-                raise ValueError(f"Tokenizer is missing required special token: {token}")
-        logger.info("[dataset.redial] All required special tokens are present in the tokenizer.")
-        self.hg_token_id = self.tokenizer.convert_tokens_to_ids(DEFAULT_HYPERGRAPH_TOKEN)
-        self.hg_start_id = self.tokenizer.convert_tokens_to_ids(DEFAULT_HG_START_TOKEN)
-        self.hg_end_id = self.tokenizer.convert_tokens_to_ids(DEFAULT_HG_END_TOKEN)
-        self.hg_patch_id = self.tokenizer.convert_tokens_to_ids(DEFAULT_HYPERGRAPH_PATCH_TOKEN)
-
     def _load_data(self):
         # raise NotImplementedError("Use _load_raw_data instead for ReDialDataset.")
         train_data, valid_data, test_data = self._load_raw_data()
